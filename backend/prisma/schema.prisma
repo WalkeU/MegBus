@@ -1,0 +1,30 @@
+// MegBus — perzisztens adatok (lezárt játékok, statisztika).
+// A futó szoba- és játékállapotot Redis tárolja, nem ez a réteg.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model GameSession {
+  id          String   @id @default(cuid())
+  roomCode    String
+  createdAt   DateTime @default(now())
+  finishedAt  DateTime?
+  players     PlayerResult[]
+}
+
+model PlayerResult {
+  id            String      @id @default(cuid())
+  name          String
+  wasBusRider   Boolean     @default(false)
+  busAttempts   Int         @default(0)
+  session       GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId     String
+
+  @@index([sessionId])
+}
