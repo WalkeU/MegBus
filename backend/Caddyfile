@@ -1,0 +1,6 @@
+# A domain a .env fájl DOMAIN változójából jön (lásd .env.example) — itt nem kell
+# szerkeszteni semmit. A Caddy automatikusan kér és megújít egy Let's Encrypt
+# TLS-tanúsítványt erre a domainre, amint a DNS A-rekordja a szerver IP-jére mutat.
+{$DOMAIN} {
+	reverse_proxy backend:3000
+}

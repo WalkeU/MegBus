@@ -16,14 +16,18 @@ export interface ClientToServerEvents {
   ) => void;
   setReady: (payload: { ready: boolean }, ack: (response: AckResponse) => void) => void;
   submitGuess: (payload: { guess: RoundGuess }, ack: (response: AckResponse) => void) => void;
+  /** Nyugtázza a hibás tippért járó büntetést — csak ez engedi tovább a kört a következő játékosra/körre. */
+  acknowledgePenalty: (ack: (response: AckResponse) => void) => void;
   /** Jelzi, hogy a játékos épp egy piramis-lap lerakását fontolgatja — erre a fordítás szünetel. */
   beginPyramidMatch: (ack: (response: AckResponse) => void) => void;
   /** Visszavonja a beginPyramidMatch-et (a játékos meggondolta magát); ha nincs más várakozó, folytatódik a fordítás. */
   cancelPyramidMatch: (ack: (response: AckResponse) => void) => void;
   playPyramidMatch: (
-    payload: { suit: string; rank: number; recipientPlayerIds: string[] },
+    payload: { suit: string; rank: number; distribution: Record<string, number> },
     ack: (response: AckResponse) => void,
   ) => void;
+  /** Nyugtázza a piramis-lerakásból kapott büntetést — amíg valamelyik címzett nem nyugtázza, a fordítás szünetel. */
+  acknowledgePyramidDrink: (ack: (response: AckResponse) => void) => void;
   answerBus: (payload: { guess: BusGuess }, ack: (response: AckResponse) => void) => void;
   requestNewRound: (ack: (response: AckResponse) => void) => void;
   leaveRoom: (ack: (response: AckResponse) => void) => void;

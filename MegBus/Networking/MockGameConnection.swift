@@ -5,6 +5,7 @@ import Foundation
 @MainActor
 final class MockGameConnection: GameConnection {
     var onEvent: ((GameEvent) -> Void)?
+    let skipsHealthCheck = true
 
     private let myPlayerId = "me"
     private let roomCode = "AB12CD"
@@ -41,13 +42,17 @@ final class MockGameConnection: GameConnection {
         onEvent?(.guessResolved(playerId: myPlayerId, card: Card(suit: .hearts, rank: 9), correct: true, penaltyUnits: 0))
     }
 
+    func acknowledgePenalty() async throws {}
+
     func beginPyramidMatch() async throws {}
 
     func cancelPyramidMatch() async throws {}
 
-    func playPyramidMatch(card: Card, recipientPlayerIds: [String]) async throws {
-        onEvent?(.pyramidMatchPlayed(playerId: myPlayerId, card: card, distribution: ["p2": 1]))
+    func playPyramidMatch(card: Card, distribution: [String: Int]) async throws {
+        onEvent?(.pyramidMatchPlayed(playerId: myPlayerId, card: card, distribution: distribution))
     }
+
+    func acknowledgePyramidDrink() async throws {}
 
     func answerBus(_ guess: String) async throws {
         onEvent?(.busQuestionResolved(

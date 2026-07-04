@@ -6,30 +6,32 @@ export class InvalidDistributionError extends Error {
 }
 
 /**
- * Szétoszt `totalUnits` korty-egységet `recipientCount` ember között, amennyire
- * lehet egyenletesen (a maradék az elsők között oszlik el). Legfeljebb annyi
- * címzett lehet, ahány egység van, hogy mindenki kapjon legalább egyet.
+ * Ellenőrzi, hogy egy játékos által megadott korty-kiosztás érvényes-e:
+ * legalább egy címzett van, minden érték legalább 1 egész korty, és az
+ * összegük pontosan `totalUnits`. A kliens szabadon dönti el, ki mennyit kap
+ * (nem kötelező egyenlő elosztás) — ez csak azt garantálja, hogy a teljes
+ * mennyiség kiosztásra kerül, se többet, se kevesebbet.
  */
-export function distributeUnits(totalUnits: number, recipientCount: number): number[] {
-  if (recipientCount < 1) {
+export function validateDistribution(
+  totalUnits: number,
+  distribution: Readonly<Record<string, number>>,
+): void {
+  const entries = Object.entries(distribution);
+  if (entries.length === 0) {
     throw new InvalidDistributionError('Legalább egy címzett szükséges.');
   }
-  if (recipientCount > totalUnits) {
-    throw new InvalidDistributionError('Nem lehet több címzett, mint ahány korty-egység van.');
-  }
-  const base = Math.floor(totalUnits / recipientCount);
-  const remainder = totalUnits % recipientCount;
-  return Array.from({ length: recipientCount }, (_, i) => base + (i < remainder ? 1 : 0));
-}
 
-export function distributeToPlayers(
-  totalUnits: number,
-  recipientPlayerIds: readonly string[],
-): Record<string, number> {
-  const amounts = distributeUnits(totalUnits, recipientPlayerIds.length);
-  const result: Record<string, number> = {};
-  recipientPlayerIds.forEach((playerId, i) => {
-    result[playerId] = (result[playerId] ?? 0) + (amounts[i] as number);
-  });
-  return result;
+  let sum = 0;
+  for (const [, units] of entries) {
+    if (!Number.isInteger(units) || units < 1) {
+      throw new InvalidDistributionError('Minden címzettnek legalább 1 egész kortyot kell adni.');
+    }
+    sum += units;
+  }
+
+  if (sum !== totalUnits) {
+    throw new InvalidDistributionError(
+      `A kiosztott korty-mennyiségnek pontosan ${totalUnits}-nak kell lennie (jelenleg ${sum}).`,
+    );
+  }
 }

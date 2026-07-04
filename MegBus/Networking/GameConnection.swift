@@ -34,18 +34,31 @@ enum GameEvent {
 @MainActor
 protocol GameConnection: AnyObject {
     var onEvent: ((GameEvent) -> Void)? { get set }
+    /// Igazra állítva a `GameViewModel` kihagyja az induláskori szerver-health-checket
+    /// (és rögtön a Home képernyőt mutatja) — ezt a `MockGameConnection` állítja be,
+    /// hogy SwiftUI previewben/local UI-fejlesztésnél ne kelljen valódi hálózat.
+    var skipsHealthCheck: Bool { get }
 
     func connect() async throws
     func createRoom(playerName: String) async throws -> (roomCode: String, playerId: String)
     func joinRoom(code: String, playerName: String) async throws -> String
     func setReady(_ ready: Bool) async throws
     func submitGuess(_ guess: String) async throws
+    /// Nyugtázza a hibás tippért járó büntetést — csak ez engedi tovább a kört.
+    func acknowledgePenalty() async throws
     /// Jelzi a szervernek, hogy a lerakást fontolgatja — ettől a piramis fordítása szünetel.
     func beginPyramidMatch() async throws
     /// Visszavonja a beginPyramidMatch-et; ha más nem fontolgat lerakást, a fordítás folytatódik.
     func cancelPyramidMatch() async throws
-    func playPyramidMatch(card: Card, recipientPlayerIds: [String]) async throws
+    /// `distribution`: playerId → hány kortyot kap — a játékos szabadon dönti el, nem kötelező egyenlő elosztás.
+    func playPyramidMatch(card: Card, distribution: [String: Int]) async throws
+    /// Nyugtázza a piramis-lerakásból kapott ivást — amíg valamelyik címzett nem teszi meg, a piramis szünetel.
+    func acknowledgePyramidDrink() async throws
     func answerBus(_ guess: String) async throws
     func requestNewRound() async throws
     func leaveRoom() async throws
+}
+
+extension GameConnection {
+    var skipsHealthCheck: Bool { false }
 }

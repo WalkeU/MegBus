@@ -111,7 +111,7 @@ describe('GameEngine — piramis', () => {
 
     engine.flipNextPyramidCard(); // revealIndex 0, rowValue 1, card = 9 diamonds
 
-    const result = engine.playPyramidMatch('A', { suit: 'clubs', rank: 9 }, ['B']);
+    const result = engine.playPyramidMatch('A', { suit: 'clubs', rank: 9 }, { B: 1 });
     expect(result.distribution).toEqual({ B: 1 });
     expect(engine.players.find((p) => p.id === 'A')?.hand).toHaveLength(3);
   });
@@ -121,7 +121,78 @@ describe('GameEngine — piramis', () => {
     playToRoundsEnd(engine);
     engine.flipNextPyramidCard();
 
-    expect(() => engine.playPyramidMatch('A', { suit: 'hearts', rank: 9 }, ['B'])).toThrow(GameEngineError);
+    expect(() => engine.playPyramidMatch('A', { suit: 'hearts', rank: 9 }, { B: 1 })).toThrow(GameEngineError);
+  });
+
+  it('hibát dob, ha a kiosztott mennyiség nem egyezik a sor értékével', () => {
+    const engine = buildDeterministicEngine();
+    playToRoundsEnd(engine);
+    engine.flipNextPyramidCard(); // rowValue 1
+
+    expect(() => engine.playPyramidMatch('A', { suit: 'clubs', rank: 9 }, { B: 2 })).toThrow(GameEngineError);
+  });
+
+  it('hibát dob, ha a játékos saját magának osztaná ki a büntetést', () => {
+    const engine = buildDeterministicEngine();
+    playToRoundsEnd(engine);
+    engine.flipNextPyramidCard();
+
+    expect(() => engine.playPyramidMatch('A', { suit: 'clubs', rank: 9 }, { A: 1 })).toThrow(GameEngineError);
+  });
+
+  it('a 2. soron (rowValue=2) két különböző címzett közt is szétosztható a büntetés', () => {
+    const queue = [
+      card(9, 'hearts'), // A r1 — piros
+      card(4, 'clubs'), // B r1 — fekete
+      card(6, 'spades'), // C r1 — fekete
+      card(11, 'hearts'), // A r2 — nagyobb mint 9
+      card(2, 'clubs'), // B r2 — kisebb mint 4
+      card(3, 'spades'), // C r2 — kisebb mint 6
+      card(10, 'hearts'), // A r3 — 9 és 11 közt: közte
+      card(7, 'clubs'), // B r3 — 2 és 4-en kívül: kívül
+      card(13, 'spades'), // C r3 — 3 és 6-on kívül: kívül
+      card(4, 'diamonds'), // A r4 — diamonds
+      card(5, 'diamonds'), // B r4 — diamonds
+      card(7, 'diamonds'), // C r4 — diamonds
+      // piramis: index0-4 = 1. sor (töltőlapok), index5 = 2. sor első lapja (9-es, egyezik A r1 lapjával),
+      // index9 = 3. sor első lapja (11-es, egyezik A r2 lapjával, aszimmetrikus kioszáshoz)
+      ...Array.from({ length: 5 }, () => card(8, 'clubs')),
+      card(9, 'spades'),
+      ...Array.from({ length: 3 }, () => card(8, 'clubs')),
+      card(11, 'clubs'),
+      ...Array.from({ length: 5 }, () => card(8, 'clubs')),
+    ];
+    const deck = new FixedCardSource(queue);
+    const engine = new GameEngine(
+      [{ id: 'A', name: 'Anna' }, { id: 'B', name: 'Béla' }, { id: 'C', name: 'Cili' }],
+      Math.random,
+      deck,
+    );
+    engine.start();
+
+    engine.submitGuess('A', 'red');
+    engine.submitGuess('B', 'black');
+    engine.submitGuess('C', 'black');
+    engine.submitGuess('A', 'bigger');
+    engine.submitGuess('B', 'smaller');
+    engine.submitGuess('C', 'smaller');
+    engine.submitGuess('A', 'between');
+    engine.submitGuess('B', 'outside');
+    engine.submitGuess('C', 'outside');
+    engine.submitGuess('A', 'diamonds');
+    engine.submitGuess('B', 'diamonds');
+    engine.submitGuess('C', 'diamonds');
+
+    for (let i = 0; i < 6; i++) engine.flipNextPyramidCard(); // revealIndex 5-ig (2. sor első lapja)
+
+    const result = engine.playPyramidMatch('A', { suit: 'hearts', rank: 9 }, { B: 1, C: 1 });
+    expect(result.distribution).toEqual({ B: 1, C: 1 });
+
+    for (let i = 0; i < 4; i++) engine.flipNextPyramidCard(); // revealIndex 9-ig (3. sor első lapja)
+
+    // Aszimmetrikus kiosztás: a 3 kortyból B kettőt, C egyet kap — a játékos szabadon dönt, nem kötelező egyenlő elosztás.
+    const asymmetricResult = engine.playPyramidMatch('A', { suit: 'hearts', rank: 11 }, { B: 2, C: 1 });
+    expect(asymmetricResult.distribution).toEqual({ B: 2, C: 1 });
   });
 });
 
@@ -152,34 +223,62 @@ describe('GameEngine — 1-4. kör büntetése', () => {
     const r1 = engine.submitGuess('A', 'black'); // valójában piros -> hibás
     expect(r1.correct).toBe(false);
     expect(r1.penaltyUnits).toBe(1);
+    expect(r1.roundAdvanced).toBe(false);
+    engine.acknowledgeRoundPenalty('A');
 
     const r1b = engine.submitGuess('B', 'red'); // valójában fekete -> hibás
     expect(r1b.correct).toBe(false);
     expect(r1b.penaltyUnits).toBe(1);
+    engine.acknowledgeRoundPenalty('B');
 
     const r2 = engine.submitGuess('A', 'smaller'); // 9 > 5, tehát "nagyobb" lenne helyes
     expect(r2.correct).toBe(false);
     expect(r2.penaltyUnits).toBe(2);
+    engine.acknowledgeRoundPenalty('A');
 
     const r2b = engine.submitGuess('B', 'bigger'); // 2 < 6, "kisebb" lenne helyes
     expect(r2b.correct).toBe(false);
     expect(r2b.penaltyUnits).toBe(2);
+    engine.acknowledgeRoundPenalty('B');
 
     const r3 = engine.submitGuess('A', 'outside'); // 7 az 5 és 9 közt van, "közte" lenne helyes
     expect(r3.correct).toBe(false);
     expect(r3.penaltyUnits).toBe(3);
+    engine.acknowledgeRoundPenalty('A');
 
     const r3b = engine.submitGuess('B', 'between'); // 10 a 2 és 6 határán kívül, "kívül" lenne helyes
     expect(r3b.correct).toBe(false);
     expect(r3b.penaltyUnits).toBe(3);
+    engine.acknowledgeRoundPenalty('B');
 
     const r4 = engine.submitGuess('A', 'hearts'); // valójában diamonds
     expect(r4.correct).toBe(false);
     expect(r4.penaltyUnits).toBe(4);
+    engine.acknowledgeRoundPenalty('A');
 
     const r4b = engine.submitGuess('B', 'clubs'); // valójában spades
     expect(r4b.correct).toBe(false);
     expect(r4b.penaltyUnits).toBe(4);
+    engine.acknowledgeRoundPenalty('B');
+  });
+
+  it('nem lehet új tippet adni, amíg az előző büntetés nincs nyugtázva', () => {
+    const engine = buildDeterministicEngine();
+    engine.submitGuess('A', 'black'); // hibás, A-nak nyugtáznia kell
+
+    expect(() => engine.submitGuess('B', 'black')).toThrow(GameEngineError);
+    expect(() => engine.acknowledgeRoundPenalty('B')).toThrow(GameEngineError);
+
+    engine.acknowledgeRoundPenalty('A');
+    const next = engine.submitGuess('B', 'black');
+    expect(next.correct).toBe(true);
+  });
+
+  it('jó tippnél automatikusan tovább lép, nyugtázás nélkül', () => {
+    const engine = buildDeterministicEngine();
+    const result = engine.submitGuess('A', 'red'); // helyes
+    expect(result.roundAdvanced).toBe(false); // csak a következő játékosra lép a körön belül
+    expect(engine.activePlayer.id).toBe('B');
   });
 });
 
@@ -209,7 +308,7 @@ describe('GameEngine — buszozó kiválasztása és négykérdéses buszozás',
     const engine = buildDeterministicEngine();
     playToRoundsEnd(engine);
     engine.flipNextPyramidCard(); // revealIndex 0, card = 9 diamonds
-    engine.playPyramidMatch('A', { suit: 'clubs', rank: 9 }, ['B']); // A: 4 -> 3 lap, B marad 4-gyel
+    engine.playPyramidMatch('A', { suit: 'clubs', rank: 9 }, { B: 1 }); // A: 4 -> 3 lap, B marad 4-gyel
     for (let i = 1; i < PYRAMID_SIZE; i++) engine.flipNextPyramidCard();
 
     const decision = engine.determineBusRider();
@@ -221,7 +320,7 @@ describe('GameEngine — buszozó kiválasztása és négykérdéses buszozás',
     const engine = buildDeterministicEngine();
     playToRoundsEnd(engine);
     engine.flipNextPyramidCard(); // revealIndex 0, card = 9 diamonds
-    engine.playPyramidMatch('A', { suit: 'clubs', rank: 9 }, ['B']);
+    engine.playPyramidMatch('A', { suit: 'clubs', rank: 9 }, { B: 1 });
     for (let i = 1; i < PYRAMID_SIZE; i++) engine.flipNextPyramidCard();
     engine.determineBusRider(); // B buszozik
 

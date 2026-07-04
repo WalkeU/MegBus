@@ -28,6 +28,22 @@ function waitForEvent<E extends keyof ServerToClientEvents>(
   });
 }
 
+/** A 'guessResolved' a teljes szobának broadcastol (mindenki mindenki tippjét megkapja),
+ * ezért playerId szerint kell szűrni — különben egy másik játékos eseményét kaphatnánk el. */
+function waitForOwnGuessResolved(
+  socket: AppClientSocket,
+  playerId: string,
+): Promise<{ correct: boolean; penaltyUnits: number }> {
+  return new Promise((resolve) => {
+    function handler(payload: { playerId: string; correct: boolean; penaltyUnits: number }) {
+      if (payload.playerId !== playerId) return;
+      socket.off('guessResolved', handler as never);
+      resolve(payload);
+    }
+    socket.on('guessResolved', handler as never);
+  });
+}
+
 describe('Socket.IO szerver — füstpróba (vital path)', () => {
   let httpServer: ReturnType<typeof createServer>;
   let io: Server<ClientToServerEvents, ServerToClientEvents>;
@@ -131,8 +147,10 @@ describe('Socket.IO szerver — füstpróba (vital path)', () => {
     10000,
   );
 
-  /** Végigviszi mindkét játékost a négy tippelős körön (a helyesség nem számít), a
-   * piramis fázis kezdetéig — a lépés-sorrend a csatlakozási sorrendet követi. */
+  /** Végigviszi mindkét játékost a négy tippelős körön (a helyesség nem számít, valódi
+   * véletlen pakli van), a piramis fázis kezdetéig. Mivel hibás tipp esetén a kör nem
+   * lép tovább, amíg nincs nyugtázva, minden tipp után a SAJÁT (playerId szerint szűrt)
+   * guessResolved eredményét nézzük, és szükség esetén nyugtázzuk a büntetést. */
   async function playThroughRoundsToPyramid(host: AppClientSocket, guest: AppClientSocket): Promise<void> {
     const pyramidPhasePromise = new Promise<void>((resolve) => {
       host.on('roomUpdated', (state) => {
@@ -143,9 +161,15 @@ describe('Socket.IO szerver — füstpróba (vital path)', () => {
     const guessesPerRound: Record<number, string> = { 0: 'red', 1: 'bigger', 2: 'between', 3: 'hearts' };
     for (let round = 0; round < 4; round++) {
       for (const socket of [host, guest]) {
+        const playerId = socket.id as string;
+        const guessResolvedPromise = waitForOwnGuessResolved(socket, playerId);
         await new Promise<AckResponse>((resolve) =>
           socket.emit('submitGuess', { guess: guessesPerRound[round] as never }, resolve),
         );
+        const resolved = await guessResolvedPromise;
+        if (!resolved.correct) {
+          await new Promise<AckResponse>((resolve) => socket.emit('acknowledgePenalty', resolve));
+        }
       }
     }
 
@@ -187,5 +211,45 @@ describe('Socket.IO szerver — füstpróba (vital path)', () => {
       expect(flipCount).toBeGreaterThanOrEqual(1);
     },
     15000,
+  );
+
+  it(
+    'rossz tippnél a kör nem lép tovább, amíg a büntetést nem nyugtázzák (socket szinten)',
+    async () => {
+      const host = await connect();
+      const guest = await connect();
+
+      const createRes = await new Promise<CreateRoomResponse>((resolve) =>
+        host.emit('createRoom', { playerName: 'Host' }, resolve),
+      );
+      const roomCode = createRes.roomCode as string;
+      const hostId = createRes.playerId as string;
+      await new Promise<JoinRoomResponse>((resolve) => guest.emit('joinRoom', { roomCode, playerName: 'Guest' }, resolve));
+      await new Promise<AckResponse>((resolve) => host.emit('setReady', { ready: true }, resolve));
+      await new Promise<AckResponse>((resolve) => guest.emit('setReady', { ready: true }, resolve));
+
+      // Egy olyan tippérték, ami sosem egyezhet semmilyen valós kör-értékkel (piros/fekete,
+      // nagyobb/kisebb stb.) — így a hibás tipp determinisztikus, nem függ a véletlen paklitól.
+      const guessResolvedPromise = waitForOwnGuessResolved(host, hostId);
+      await new Promise<AckResponse>((resolve) =>
+        host.emit('submitGuess', { guess: 'GARANTALTAN_HIBAS' as never }, resolve),
+      );
+      const resolved = await guessResolvedPromise;
+      expect(resolved.correct).toBe(false);
+
+      // Amíg a host nem nyugtázza a büntetést, a guest nem léphet — az aktív játékos még mindig a host.
+      const guestRejected = await new Promise<AckResponse>((resolve) =>
+        guest.emit('submitGuess', { guess: 'red' }, resolve),
+      );
+      expect(guestRejected.ok).toBe(false);
+
+      const activePlayerPromise = waitForEvent(host, 'activePlayerChanged');
+      const ackRes = await new Promise<AckResponse>((resolve) => host.emit('acknowledgePenalty', resolve));
+      expect(ackRes.ok).toBe(true);
+
+      const activePlayerPayload = await activePlayerPromise;
+      expect(activePlayerPayload.playerId).not.toBe(hostId); // most már a guest-re lépett
+    },
+    10000,
   );
 });

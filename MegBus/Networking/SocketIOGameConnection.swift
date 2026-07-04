@@ -36,6 +36,16 @@ final class SocketIOGameConnection: GameConnection {
                 let message = (data.first as? String) ?? "Kapcsolódási hiba."
                 continuation.resume(throwing: GameConnectionError.server(message))
             }
+            // Ha a szerver elérhetetlen (rossz IP, Tailscale nincs bekötve, tűzfal
+            // eldobja a csomagot stb.), sem `.connect`, sem `.error` nem biztos, hogy
+            // valaha lefut — enélkül a felhasználó örökre "lóg" hibaüzenet nélkül.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(throwing: GameConnectionError.server(
+                    "Nem sikerült kapcsolódni a szerverhez (időtúllépés). Ellenőrizd, hogy fut-e a backend, és elérhető-e a hálózaton."
+                ))
+            }
             socket.connect()
         }
     }
@@ -64,6 +74,10 @@ final class SocketIOGameConnection: GameConnection {
         _ = try await emitWithAck("submitGuess", ["guess": guess])
     }
 
+    func acknowledgePenalty() async throws {
+        _ = try await emitWithAck("acknowledgePenalty")
+    }
+
     func beginPyramidMatch() async throws {
         _ = try await emitWithAck("beginPyramidMatch")
     }
@@ -72,12 +86,16 @@ final class SocketIOGameConnection: GameConnection {
         _ = try await emitWithAck("cancelPyramidMatch")
     }
 
-    func playPyramidMatch(card: Card, recipientPlayerIds: [String]) async throws {
+    func playPyramidMatch(card: Card, distribution: [String: Int]) async throws {
         _ = try await emitWithAck("playPyramidMatch", [
             "suit": card.suit.rawValue,
             "rank": card.rank,
-            "recipientPlayerIds": recipientPlayerIds,
+            "distribution": distribution,
         ])
+    }
+
+    func acknowledgePyramidDrink() async throws {
+        _ = try await emitWithAck("acknowledgePyramidDrink")
     }
 
     func answerBus(_ guess: String) async throws {

@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "MegBus",
+    "slug": "megbus",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0A0A0F",
+    "scheme": "megbus",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.megbus.app",
+      "backgroundColor": "#0A0A0F"
+    },
+    "android": {
+      "package": "com.megbus.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0F",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "splash": {
+      "backgroundColor": "#0A0A0F"
+    }
+  }
+}

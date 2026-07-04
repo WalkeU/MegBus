@@ -2,6 +2,7 @@ import { Server, Socket } from 'socket.io';
 import { RoomManager, RoomManagerError } from '../rooms/roomManager';
 import { GameEngineError } from '../game/gameEngine';
 import { isRank, isSuit } from '../game/types';
+import { PyramidPauseTracker } from './pyramidPauseState';
 import {
   AckResponse,
   ClientToServerEvents,
@@ -47,9 +48,7 @@ function safeAck<T extends (...args: never[]) => void>(ack: T): T {
 
 export function registerSocketHandlers(io: AppServer, roomManager: RoomManager): void {
   const pyramidIntervals = new Map<string, ReturnType<typeof setInterval>>();
-  /** Azok a játékosok szobánként, akik éppen a piramis-lerakást döntik el — amíg
-   * ez a halmaz nem üres, a piramis fordítása szünetel. */
-  const pendingPyramidPlayers = new Map<string, Set<string>>();
+  const pyramidPause = new PyramidPauseTracker();
 
   function stopPyramidInterval(roomCode: string): void {
     const interval = pyramidIntervals.get(roomCode);
@@ -90,21 +89,31 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
     pyramidIntervals.set(roomCode, interval);
   }
 
-  /** Eltávolít egy játékost a "dönt a lerakásról" halmazból; ha ezzel kiürül, folytatja a piramist. */
-  function releasePendingPyramidPlayer(roomCode: string, playerId: string): void {
-    const pending = pendingPyramidPlayers.get(roomCode);
-    if (!pending) return;
-    pending.delete(playerId);
-    if (pending.size === 0) {
-      pendingPyramidPlayers.delete(roomCode);
-      try {
-        const room = roomManager.getRoom(roomCode);
-        if (room.engine && room.engine.phase === 'pyramid') {
-          startPyramidTicker(roomCode);
-        }
-      } catch {
-        // a szoba már törölve lett — nincs mit folytatni
+  /** Csak akkor folytatja a piramis fordítását, ha senki sem dönt lerakásról, és senki sem tartozik ivással. */
+  function tryResumePyramid(roomCode: string): void {
+    if (pyramidPause.isPaused(roomCode)) return;
+    try {
+      const room = roomManager.getRoom(roomCode);
+      if (room.engine && room.engine.phase === 'pyramid') {
+        startPyramidTicker(roomCode);
       }
+    } catch {
+      // a szoba már törölve lett — nincs mit folytatni
+    }
+  }
+
+  /** Az 1-4. kör tovább lépését jelzi a klienseknek: vagy a piramis indul, vagy a következő aktív játékost közli. */
+  function broadcastRoundAdvance(roomCode: string): void {
+    const room = roomManager.getRoom(roomCode);
+    if (!room.engine) return;
+    if (room.engine.phase === 'pyramid') {
+      broadcastRoom(roomCode);
+      startPyramidTicker(roomCode);
+    } else {
+      io.to(roomCode).emit('activePlayerChanged', {
+        playerId: room.engine.activePlayer.id,
+        phase: room.engine.phase,
+      });
     }
   }
 
@@ -166,7 +175,6 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
       try {
         const room = roomManager.getRoom(roomCode);
         if (!room.engine) throw new GameEngineError('A játék még nem indult el.');
-        const phaseBefore = room.engine.phase;
         const result = room.engine.submitGuess(socket.id, guess);
         ack({ ok: true });
         io.to(roomCode).emit('guessResolved', {
@@ -175,22 +183,29 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
           correct: result.correct,
           penaltyUnits: result.penaltyUnits,
         });
-        if (room.engine.phase !== phaseBefore) {
-          if (room.engine.phase === 'pyramid') {
-            broadcastRoom(roomCode);
-            startPyramidTicker(roomCode);
-          } else {
-            io.to(roomCode).emit('activePlayerChanged', {
-              playerId: room.engine.activePlayer.id,
-              phase: room.engine.phase,
-            });
-          }
-        } else if (result.roundAdvanced === false) {
-          io.to(roomCode).emit('activePlayerChanged', {
-            playerId: room.engine.activePlayer.id,
-            phase: room.engine.phase,
-          });
+        // Hibás tipp esetén a kör nem lép tovább, amíg a játékos nem nyugtázza a büntetést
+        // (lásd 'acknowledgePenalty') — helyes tippnél viszont az engine már lépett, közöljük.
+        if (result.correct) {
+          broadcastRoundAdvance(roomCode);
         }
+      } catch (error) {
+        ack(errorAck(error));
+      }
+    });
+
+    socket.on('acknowledgePenalty', (ack) => {
+      ack = safeAck(ack);
+      const roomCode = currentRoomCode(socket);
+      if (!roomCode) {
+        ack({ ok: false, error: 'A socket nincs egy szobához sem csatlakoztatva.' });
+        return;
+      }
+      try {
+        const room = roomManager.getRoom(roomCode);
+        if (!room.engine) throw new GameEngineError('A játék még nem indult el.');
+        room.engine.acknowledgeRoundPenalty(socket.id);
+        ack({ ok: true });
+        broadcastRoundAdvance(roomCode);
       } catch (error) {
         ack(errorAck(error));
       }
@@ -208,12 +223,7 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
         if (!room.engine || room.engine.phase !== 'pyramid') {
           throw new GameEngineError('A piramis csak piramis fázisban szüneteltethető.');
         }
-        let pending = pendingPyramidPlayers.get(roomCode);
-        if (!pending) {
-          pending = new Set();
-          pendingPyramidPlayers.set(roomCode, pending);
-        }
-        pending.add(socket.id);
+        pyramidPause.markDeciding(roomCode, socket.id);
         stopPyramidInterval(roomCode);
         ack({ ok: true });
       } catch (error) {
@@ -228,11 +238,12 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
         ack({ ok: false, error: 'A socket nincs egy szobához sem csatlakoztatva.' });
         return;
       }
-      releasePendingPyramidPlayer(roomCode, socket.id);
+      pyramidPause.releaseDeciding(roomCode, socket.id);
+      tryResumePyramid(roomCode);
       ack({ ok: true });
     });
 
-    socket.on('playPyramidMatch', ({ suit, rank, recipientPlayerIds }, ack) => {
+    socket.on('playPyramidMatch', ({ suit, rank, distribution }, ack) => {
       ack = safeAck(ack);
       const roomCode = currentRoomCode(socket);
       if (!roomCode) {
@@ -243,9 +254,14 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
         if (!isSuit(suit) || !isRank(rank)) {
           throw new GameEngineError('Érvénytelen lap (suit/rank) érkezett a kliensből.');
         }
+        if (typeof distribution !== 'object' || distribution === null || Array.isArray(distribution)) {
+          throw new GameEngineError('Érvénytelen kiosztás érkezett a kliensből.');
+        }
         const room = roomManager.getRoom(roomCode);
         if (!room.engine) throw new GameEngineError('A játék még nem indult el.');
-        const result = room.engine.playPyramidMatch(socket.id, { suit, rank }, recipientPlayerIds);
+        const result = room.engine.playPyramidMatch(socket.id, { suit, rank }, distribution);
+        // A piramis addig szünetel, amíg a most kijelölt címzettek nem nyugtázzák az ivást.
+        pyramidPause.markDrinkersPending(roomCode, Object.keys(result.distribution));
         ack({ ok: true });
         io.to(roomCode).emit('pyramidMatchPlayed', {
           playerId: result.playerId,
@@ -255,8 +271,21 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
       } catch (error) {
         ack(errorAck(error));
       } finally {
-        releasePendingPyramidPlayer(roomCode, socket.id);
+        pyramidPause.releaseDeciding(roomCode, socket.id);
+        tryResumePyramid(roomCode);
       }
+    });
+
+    socket.on('acknowledgePyramidDrink', (ack) => {
+      ack = safeAck(ack);
+      const roomCode = currentRoomCode(socket);
+      if (!roomCode) {
+        ack({ ok: false, error: 'A socket nincs egy szobához sem csatlakoztatva.' });
+        return;
+      }
+      pyramidPause.releaseDrinker(roomCode, socket.id);
+      tryResumePyramid(roomCode);
+      ack({ ok: true });
     });
 
     socket.on('answerBus', ({ guess }, ack) => {
@@ -329,9 +358,10 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
         if (room.players.every((p) => !p.connected)) {
           // Senki sincs a szobában — nincs kinek folytatni a piramist, elkerüljük az örökké futó időzítőt.
           stopPyramidInterval(roomCode);
-          pendingPyramidPlayers.delete(roomCode);
+          pyramidPause.clearRoom(roomCode);
         } else {
-          releasePendingPyramidPlayer(roomCode, socket.id);
+          pyramidPause.releasePlayer(roomCode, socket.id);
+          tryResumePyramid(roomCode);
         }
         broadcastRoom(roomCode);
       } catch {

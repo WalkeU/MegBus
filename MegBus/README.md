@@ -8,7 +8,7 @@ nélkül (mindenki a saját telefonján látja a saját lapjait és a tippelési
 
 - **Backend** (`backend/`): a teljes játéklogika (lapgenerálás, 1-4. kör, piramis,
   négykérdéses buszozás), szoba- és ready-kezelés, valamint a Socket.IO/Express szerver
-  el van készítve és tesztelve (58 zöld unit + integrációs teszt, lásd lentebb).
+  el van készítve és tesztelve (78 zöld unit + integrációs teszt, lásd lentebb).
   A Prisma séma vázolva van, de élő adatbázis-kapcsolat nélkül.
 - **iOS kliens** (`MegBus/`): SwiftUI/MVVM alkalmazás a teljes UX-folyammal (lobby, 1-4. kör,
   piramis, buszozás, játék vége), sötét témával. Hálózati réteg `GameConnection` protokoll
@@ -25,9 +25,12 @@ nélkül (mindenki a saját telefonján látja a saját lapjait és a tippelési
 cd backend
 npm install
 npm run dev        # fejlesztői szerver (tsx watch)
-npm test           # 58 unit + integrációs teszt
+npm test           # 78 unit + integrációs teszt
 npm run build       # production build (dist/)
 ```
+
+Production éles deployhoz (Docker konténer, domain, automatikus HTTPS Caddy-vel):
+lásd [`backend/README.md`](../backend/README.md).
 
 ### iOS kliens megnyitása
 
@@ -60,7 +63,9 @@ mennyisége megegyezik a kör sorszámával:
 | 4. | Milyen szín? | 4 korty |
 
 A büntetést a játékos egy gombnyomással nyugtázza ("megittam") — nincs kiosztás
-másoknak ebben a szakaszban.
+másoknak ebben a szakaszban. **A kör nem lép tovább a következő játékosra (sem a
+következő körre), amíg ezt a nyugtázást meg nem teszi** — ezalatt más játékos sem
+tud tippelni.
 
 ### 1. kör — Piros vagy fekete?
 
@@ -107,8 +112,9 @@ felette = 2, középső = 3, következő = 4, csúcs = 5. A lerakott lapok kiker
 Az appban a rendszer **nem jelzi automatikusan**, ha valakinek egyező lapja van — ez
 szándékos: a játékosnak saját magának kell észrevennie a nála lévő lapok alapján, és
 kezdeményeznie a lerakást. Amíg valaki éppen a lerakás mellett dönt (kiválasztja, kinek
-adja a büntetést), a piramis fordítása megáll, és csak azután folytatódik, hogy döntött
-vagy meggondolta magát.
+adja a büntetést), a piramis fordítása megáll. **A fordítás azután sem folytatódik
+azonnal — a kiosztott büntetés címzettjeinek is nyugtázniuk kell (egy "megittam"
+gombbal), hogy megitták a rájuk eső kortyot; csak ezután folytatódik a piramis.**
 
 ### 6. kör — Buszozás
 
@@ -162,9 +168,10 @@ a fenti szabályokra építve.
   amíg az adott kör mindenkin végig nem ment.
 - Ha egy kör mindenkin végigment, a következő kör automatikusan elindul (1. → 2. → 3. → 4.).
 - Tippelés eredménye:
-  - Jó tipp: nem történik semmi, a soron következő játékosé a tipp.
+  - Jó tipp: automatikusan a soron következő játékosé (vagy a következő köré) a tipp.
   - Rossz tipp: a játékos egy gombnyomással nyugtázza, hogy megitta a kör sorszámával
-    megegyező mennyiségű kortyot (1/2/3/4).
+    megegyező mennyiségű kortyot (1/2/3/4). **A kör csak ezután lép tovább** —
+    addig senki más nem tippelhet.
 
 ### 5. kör — Piramis
 
@@ -173,8 +180,17 @@ a fenti szabályokra építve.
 - A rendszer nem jelzi ki, kinek van egyező lapja — a játékosnak a saját lapjai alapján
   kell észrevennie, és rákoppintania az egyező lapra a saját kezében.
 - Amint valaki rákoppint egy lapra, hogy lerakja, a piramis fordítása megáll, amíg ő
-  kiválasztja, kinek vagy kiknek osztja ki a büntetést (nem kötelező egy emberre adnia,
-  megosztható), vagy meggondolja magát. Ezután a fordítás folytatódik.
+  kiválasztja, kinek vagy kiknek osztja ki a büntetést. A játékos **pontosan megadja,
+  ki hány kortyot kapjon** (nem automatikus egyenlő elosztás) — a sor értékéig bárhogy
+  eloszthatja több ember közt (pl. 3 kortynál 2-1 arányban, vagy mindet egy embernek),
+  a rendszer csak azt ellenőrzi, hogy a kiosztott összeg pontosan a sor értékét adja
+  ki — vagy meggondolhatja magát.
+- A fordítás ezután sem folytatódik azonnal: a kijelölt címzett(ek)nek egy "megittam"
+  gombbal nyugtázniuk kell a rájuk eső kortyot. **Csak akkor folytatódik a piramis,
+  ha mindenki nyugtázta, akinek innia kellett.**
+- Ha valakinek úgy oszt ki valaki mást is kortyot, hogy az előzőt még nem itta meg,
+  a mennyiségek összeadódnak (nem tűnik el a korábbi) — egy "megittam" nyugtázza
+  az összes addig felgyűlt kortyot egyszerre.
 
 ### 6. kör — Buszozás
 

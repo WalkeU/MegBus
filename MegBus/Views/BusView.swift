@@ -49,11 +49,18 @@ struct BusView: View {
 
             if let result = viewModel.busLastResult {
                 VStack(spacing: 8) {
-                    CardView(card: result.card)
+                    // Helyes válasznál a lap már látszik az "eddig ebben a
+                    // próbálkozásban" sorban feljebb — itt újra kirajzolni
+                    // duplikáció lenne.
+                    if !result.correct {
+                        CardView(card: result.card)
+                    }
                     Text(result.correct ? "Helyes — következő kérdés" : "Hibás — elölről kezdi")
                         .font(.headline)
                         .foregroundStyle(result.correct ? AppTheme.success : AppTheme.danger)
                 }
+            } else {
+                CardView(card: Card(suit: .spades, rank: 2), faceDown: true)
             }
 
             Spacer()

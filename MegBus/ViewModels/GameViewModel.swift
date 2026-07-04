@@ -18,10 +18,13 @@ struct BusResultDisplay {
 @MainActor
 final class GameViewModel: ObservableObject {
     enum Screen: Equatable {
-        case home, lobby, round, pyramid, bus, gameOver
+        case checking, maintenance, home, lobby, round, pyramid, bus, gameOver
     }
 
-    @Published private(set) var screen: Screen = .home
+    /// Amíg nem tudjuk, elérhető-e a szerver, ne mutassuk a Home képernyőt — a
+    /// health-check dönti el, hogy a normál appot vagy a karbantartás-képernyőt
+    /// látja a felhasználó (lásd `checkServerHealthAndProceed`).
+    @Published private(set) var screen: Screen = .checking
     @Published private(set) var roomState: RoomState?
     @Published private(set) var myPlayerId: String?
     @Published private(set) var myHand: [Card] = []
@@ -29,6 +32,8 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var lastGuessCorrect: Bool?
     /// Ha nem nil, a játékosnak ennyi kortyot kell innia, és ezt még nem nyugtázta.
     @Published private(set) var pendingPenaltyUnits: Int?
+    /// Ha nem nil, egy piramis-lerakásból kapott ennyi kortyot kell innia, és ezt még nem nyugtázta.
+    @Published private(set) var pendingPyramidDrinkUnits: Int?
     @Published private(set) var pyramidFlips: [PyramidFlipDisplay] = []
     @Published private(set) var isDecidingPyramidMatch = false
     @Published private(set) var busRiderId: String?
@@ -40,6 +45,8 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var isBusy = false
 
     private let connection: GameConnection
+    private var healthRetryTask: Task<Void, Never>?
+    private static let healthRetryInterval: UInt64 = 10_000_000_000
 
     var isHost: Bool { roomState?.players.first?.id == myPlayerId }
     var isMyTurn: Bool { roomState?.activePlayerId == myPlayerId }
@@ -57,6 +64,61 @@ final class GameViewModel: ObservableObject {
         connection.onEvent = { [weak self] event in
             guard let self else { return }
             Task { @MainActor in self.handle(event) }
+        }
+        if connection.skipsHealthCheck {
+            screen = .home
+        } else {
+            Task { @MainActor [weak self] in await self?.checkServerHealthAndProceed() }
+        }
+    }
+
+    // MARK: - Szerver-elérhetőség
+
+    /// Azonnal (app-indításkor) lefut, és eldönti, hogy a Home vagy a
+    /// karbantartás-képernyő jelenjen-e meg. Szándékosan nem a socket-kapcsolaton
+    /// keresztül ellenőriz (annak 8s-es timeoutja van), hanem egy gyors, sima HTTP
+    /// health-check hívással, hogy a felhasználó ne várjon feleslegesen.
+    private func checkServerHealthAndProceed() async {
+        healthRetryTask?.cancel()
+        let healthy = await Self.isServerHealthy()
+        if healthy {
+            screen = .home
+        } else {
+            screen = .maintenance
+            scheduleHealthRetry()
+        }
+    }
+
+    /// A karbantartás-képernyőn lévő "Újrapróbálom" gomb hívja meg.
+    func retryHealthCheckNow() async {
+        screen = .checking
+        await checkServerHealthAndProceed()
+    }
+
+    private func scheduleHealthRetry() {
+        healthRetryTask?.cancel()
+        healthRetryTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.healthRetryInterval)
+                if Task.isCancelled { return }
+                if await Self.isServerHealthy() {
+                    await MainActor.run { self.screen = .home }
+                    return
+                }
+            }
+        }
+    }
+
+    private static func isServerHealthy() async -> Bool {
+        var request = URLRequest(url: AppConfig.backendServerURL.appendingPathComponent("health"))
+        request.timeoutInterval = 4
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            return (200...299).contains(httpResponse.statusCode)
+        } catch {
+            return false
         }
     }
 
@@ -90,10 +152,13 @@ final class GameViewModel: ObservableObject {
         await run { try await connection.submitGuess(guess) }
     }
 
-    /// A hibás tipp után járó korty-büntetés nyugtázása — tisztán lokális állapot, a
-    /// szerver már a tipp beküldésekor eldöntötte a büntetést, ehhez nincs szükség hívásra.
-    func acknowledgePenalty() {
-        pendingPenaltyUnits = nil
+    /// A hibás tipp után járó korty-büntetés nyugtázása — csak ez engedi tovább a kört
+    /// a következő játékosra/körre a szerveren.
+    func acknowledgePenalty() async {
+        await run {
+            try await connection.acknowledgePenalty()
+            self.pendingPenaltyUnits = nil
+        }
     }
 
     // MARK: - Piramis
@@ -114,10 +179,20 @@ final class GameViewModel: ObservableObject {
         }
     }
 
-    func playPyramidMatch(_ card: Card, recipientPlayerIds: [String]) async {
+    /// `distribution`: playerId → hány kortyot kap — a hívó felelőssége, hogy az összeg
+    /// pontosan a sor értékét adja ki (a szerver úgyis ellenőrzi és elutasítja, ha nem).
+    func playPyramidMatch(_ card: Card, distribution: [String: Int]) async {
         await run {
-            try await connection.playPyramidMatch(card: card, recipientPlayerIds: recipientPlayerIds)
+            try await connection.playPyramidMatch(card: card, distribution: distribution)
             self.isDecidingPyramidMatch = false
+        }
+    }
+
+    /// A piramis-lerakásból kapott ivás nyugtázása — amíg ezt meg nem teszi, a piramis szünetel.
+    func acknowledgePyramidDrink() async {
+        await run {
+            try await connection.acknowledgePyramidDrink()
+            self.pendingPyramidDrinkUnits = nil
         }
     }
 
@@ -175,9 +250,14 @@ final class GameViewModel: ObservableObject {
                 screen = .pyramid
             }
 
-        case .pyramidMatchPlayed(let playerId, let card, _):
+        case .pyramidMatchPlayed(let playerId, let card, let distribution):
             if playerId == myPlayerId {
                 myHand.removeAll { $0 == card }
+            }
+            if let myId = myPlayerId, let units = distribution[myId] {
+                // Ha már van nyugtázatlan piramis-büntetése, hozzáadjuk az újat, nem felülírjuk —
+                // különben egy korábbi, még meg nem ivott büntetés nyomtalanul eltűnne.
+                pendingPyramidDrinkUnits = (pendingPyramidDrinkUnits ?? 0) + units
             }
 
         case .busRiderSelected(let riderId, let deckRemaining):
@@ -220,6 +300,7 @@ final class GameViewModel: ObservableObject {
         lastDrawnCard = nil
         lastGuessCorrect = nil
         pendingPenaltyUnits = nil
+        pendingPyramidDrinkUnits = nil
         pyramidFlips = []
         isDecidingPyramidMatch = false
         busRiderId = nil

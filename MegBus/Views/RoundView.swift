@@ -109,9 +109,10 @@ struct RoundView: View {
                 .foregroundStyle(AppTheme.danger)
 
             Button("Megittam") {
-                viewModel.acknowledgePenalty()
+                Task { await viewModel.acknowledgePenalty() }
             }
             .buttonStyle(PrimaryButtonStyle())
+            .disabled(viewModel.isBusy)
         }
         .cardSurface()
     }

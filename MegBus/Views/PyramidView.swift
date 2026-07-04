@@ -28,7 +28,8 @@ private struct ShakeEffect: GeometryEffect {
 struct PyramidView: View {
     @ObservedObject var viewModel: GameViewModel
     @State private var cardToPlay: Card?
-    @State private var selectedRecipients: Set<String> = []
+    /// playerId → hány kortyot kap — a felhasználó szabadon dönti el, kinek mennyit ad.
+    @State private var amounts: [String: Int] = [:]
     @State private var shakingCardID: String?
     @State private var shakeAttempts: CGFloat = 0
 
@@ -42,6 +43,17 @@ struct PyramidView: View {
                 .font(.footnote)
                 .foregroundStyle(AppTheme.textSecondary)
                 .multilineTextAlignment(.center)
+
+            if viewModel.pyramidFlips.count < 15 {
+                PyramidCountdownRing(
+                    flipCount: viewModel.pyramidFlips.count,
+                    isPaused: viewModel.pendingPyramidDrinkUnits != nil || cardToPlay != nil
+                )
+            }
+
+            if let units = viewModel.pendingPyramidDrinkUnits {
+                pyramidDrinkPanel(units: units)
+            }
 
             Spacer()
 
@@ -72,33 +84,61 @@ struct PyramidView: View {
                         .frame(width: 44, height: 64)
                         .scaleEffect(0.7)
                 } else {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(AppTheme.surfaceElevated)
+                    CardView(card: Card(suit: .spades, rank: 2), faceDown: true)
                         .frame(width: 44, height: 64)
+                        .scaleEffect(0.7)
                 }
             }
         }
     }
 
+    /// A jelenleg felül lévő piramis-lap sorértéke — ennyi korty-egység osztható szét,
+    /// és legfeljebb ennyi (különböző) címzettnek adható belőle, egy-egy egész korty fejenként.
+    private var currentRowValue: Int {
+        viewModel.pyramidFlips.last?.rowValue ?? 1
+    }
+
+    private var totalAssigned: Int {
+        amounts.values.reduce(0, +)
+    }
+
     private func playMatchPanel(card: Card) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Kinek osztod a büntetést?")
+        let rowValue = currentRowValue
+        let remaining = rowValue - totalAssigned
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Kinek hány kortyot osztasz?")
                 .font(.subheadline)
                 .foregroundStyle(AppTheme.textSecondary)
+            Text("Kiosztva: \(totalAssigned) / \(rowValue) korty")
+                .font(.footnote)
+                .foregroundStyle(remaining == 0 ? AppTheme.success : AppTheme.textSecondary)
 
             ForEach(otherPlayers) { player in
-                Button {
-                    toggleRecipient(player.id)
-                } label: {
-                    HStack {
-                        Text(player.name)
-                        Spacer()
-                        if selectedRecipients.contains(player.id) {
-                            Image(systemName: "checkmark.circle.fill")
-                        }
+                let amount = amounts[player.id] ?? 0
+                HStack {
+                    Text(player.name)
+                    Spacer()
+                    Button {
+                        setAmount(for: player.id, to: amount - 1)
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
                     }
+                    .disabled(amount <= 0)
+
+                    Text("\(amount)")
+                        .font(.headline.monospacedDigit())
+                        .frame(minWidth: 24)
+
+                    Button {
+                        setAmount(for: player.id, to: amount + 1)
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                    }
+                    .disabled(remaining <= 0)
                 }
-                .buttonStyle(PrimaryButtonStyle(isProminent: selectedRecipients.contains(player.id)))
+                .foregroundStyle(AppTheme.textPrimary)
+                .padding(.vertical, 6)
             }
 
             HStack(spacing: 12) {
@@ -106,21 +146,39 @@ struct PyramidView: View {
                     Task {
                         await viewModel.cancelPyramidMatch()
                         cardToPlay = nil
-                        selectedRecipients.removeAll()
+                        amounts.removeAll()
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle(isProminent: false))
 
                 Button("Lerakás") {
                     Task {
-                        await viewModel.playPyramidMatch(card, recipientPlayerIds: Array(selectedRecipients))
+                        await viewModel.playPyramidMatch(card, distribution: amounts.filter { $0.value > 0 })
                         cardToPlay = nil
-                        selectedRecipients.removeAll()
+                        amounts.removeAll()
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
-                .disabled(selectedRecipients.isEmpty)
+                .disabled(remaining != 0)
             }
+        }
+        .cardSurface()
+    }
+
+    private func pyramidDrinkPanel(units: Int) -> some View {
+        VStack(spacing: 12) {
+            Text("Igyál \(units) kortyot!")
+                .font(.title3.bold())
+                .foregroundStyle(AppTheme.danger)
+            Text("A piramis addig nem folytatódik, amíg meg nem itta.")
+                .font(.footnote)
+                .foregroundStyle(AppTheme.textSecondary)
+
+            Button("Megittam") {
+                Task { await viewModel.acknowledgePyramidDrink() }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(viewModel.isBusy)
         }
         .cardSurface()
     }
@@ -129,11 +187,14 @@ struct PyramidView: View {
         (viewModel.roomState?.players ?? []).filter { $0.id != viewModel.myPlayerId }
     }
 
-    private func toggleRecipient(_ id: String) {
-        if selectedRecipients.contains(id) {
-            selectedRecipients.remove(id)
+    private func setAmount(for playerId: String, to newValue: Int) {
+        let rowValue = currentRowValue
+        let othersTotal = totalAssigned - (amounts[playerId] ?? 0)
+        let clamped = max(0, min(newValue, rowValue - othersTotal))
+        if clamped == 0 {
+            amounts.removeValue(forKey: playerId)
         } else {
-            selectedRecipients.insert(id)
+            amounts[playerId] = clamped
         }
     }
 

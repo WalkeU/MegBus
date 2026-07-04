@@ -8,11 +8,6 @@
 
 import SwiftUI
 
-/// A backend szerver címe. Szimulátorból a Mac `localhost`-ja elérhető közvetlenül;
-/// fizikai eszközön a Mac Tailscale-IP-jét használjuk, hogy ne kelljen ugyanazon a
-/// LAN-on lenni — csak a Tailscale app fusson és legyen bejelentkezve mindkét eszközön.
-private let backendServerURL = URL(string: "http://100.89.199.9:3000")!
-
 struct ContentView: View {
     @StateObject private var viewModel = GameViewModel(connection: ContentView.makeConnection())
 
@@ -21,7 +16,7 @@ struct ContentView: View {
     /// projekt package nélkül is forduljon — a MockGameConnection-t használja.
     private static func makeConnection() -> GameConnection {
         #if canImport(SocketIO)
-        return SocketIOGameConnection(serverURL: backendServerURL)
+        return SocketIOGameConnection(serverURL: AppConfig.backendServerURL)
         #else
         return MockGameConnection()
         #endif
@@ -30,6 +25,10 @@ struct ContentView: View {
     var body: some View {
         Group {
             switch viewModel.screen {
+            case .checking:
+                CheckingView()
+            case .maintenance:
+                MaintenanceView(onRetry: { Task { await viewModel.retryHealthCheckNow() } })
             case .home:
                 HomeView(viewModel: viewModel)
             case .lobby:

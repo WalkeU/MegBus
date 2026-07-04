@@ -1,34 +1,24 @@
-import { distributeToPlayers, distributeUnits, InvalidDistributionError } from '../game/distribution';
+import { InvalidDistributionError, validateDistribution } from '../game/distribution';
 
-describe('distributeUnits', () => {
-  it('egyenletesen oszt el, ha pontosan osztható', () => {
-    expect(distributeUnits(4, 2)).toEqual([2, 2]);
+describe('validateDistribution', () => {
+  it('elfogadja, ha az összeg pontosan a korty-egységet adja ki', () => {
+    expect(() => validateDistribution(3, { A: 2, B: 1 })).not.toThrow();
+    expect(() => validateDistribution(3, { A: 3 })).not.toThrow();
+    expect(() => validateDistribution(3, { A: 1, B: 1, C: 1 })).not.toThrow();
   });
 
-  it('a maradékot az elsők kapják', () => {
-    expect(distributeUnits(5, 2)).toEqual([3, 2]);
-    expect(distributeUnits(7, 3)).toEqual([3, 2, 2]);
+  it('hibát dob, ha nincs egy címzett sem', () => {
+    expect(() => validateDistribution(3, {})).toThrow(InvalidDistributionError);
   });
 
-  it('egy címzett az összeset kapja', () => {
-    expect(distributeUnits(3, 1)).toEqual([3]);
+  it('hibát dob, ha az összeg nem egyezik a korty-egységgel', () => {
+    expect(() => validateDistribution(3, { A: 2 })).toThrow(InvalidDistributionError);
+    expect(() => validateDistribution(3, { A: 2, B: 2 })).toThrow(InvalidDistributionError);
   });
 
-  it('hibát dob, ha több címzett van, mint egység', () => {
-    expect(() => distributeUnits(2, 3)).toThrow(InvalidDistributionError);
-  });
-
-  it('hibát dob, ha nincs címzett', () => {
-    expect(() => distributeUnits(2, 0)).toThrow(InvalidDistributionError);
-  });
-});
-
-describe('distributeToPlayers', () => {
-  it('játékos azonosítókhoz rendeli a korty-mennyiséget', () => {
-    expect(distributeToPlayers(5, ['a', 'b'])).toEqual({ a: 3, b: 2 });
-  });
-
-  it('ismétlődő címzett összeadja a mennyiséget', () => {
-    expect(distributeToPlayers(4, ['a', 'a'])).toEqual({ a: 4 });
+  it('hibát dob, ha valamelyik érték nem pozitív egész', () => {
+    expect(() => validateDistribution(3, { A: 0, B: 3 })).toThrow(InvalidDistributionError);
+    expect(() => validateDistribution(3, { A: -1, B: 4 })).toThrow(InvalidDistributionError);
+    expect(() => validateDistribution(3, { A: 1.5, B: 1.5 })).toThrow(InvalidDistributionError);
   });
 });

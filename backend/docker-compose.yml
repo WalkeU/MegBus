@@ -1,0 +1,34 @@
+# Explicit projektnév + konténernevek, hogy `docker ps` alapján egyértelműen
+# megkülönböztethető legyen egy másik, esetleg szintén "backend" nevű mappában
+# futó, teljesen független projekttől ezen a gépen.
+name: megbus-backend
+
+services:
+  backend:
+    container_name: megbus-backend
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "3000"
+
+  caddy:
+    container_name: megbus-caddy
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+
+volumes:
+  caddy_data:
+  caddy_config:

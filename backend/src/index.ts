@@ -10,6 +10,10 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '*';
 
 const app = express();
 app.get('/health', (_req, res) => {
+  // A Socket.IO CORS-beállítása csak a Socket.IO handshake-re vonatkozik, erre a
+  // sima Express route-ra nem — böngészős (web) kliens nélküle nem tudná lekérdezni
+  // más originről (pl. Expo web dev szerver), CORS-hibával elutasítaná a fetch-et.
+  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
   res.json({ status: 'ok' });
 });
 

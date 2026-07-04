@@ -9,7 +9,7 @@ import {
   evaluateSuitGuess,
 } from './rounds';
 import { buildPyramid, findMatchingCards, PyramidSlot, PYRAMID_SIZE } from './pyramid';
-import { distributeToPlayers } from './distribution';
+import { validateDistribution } from './distribution';
 import { answerBusQuestion, BusAttempt, BusGuess, startBusAttempt } from './busRound';
 
 export const MIN_PLAYERS = 2;
@@ -245,11 +245,16 @@ export class GameEngine {
     return { slot, pyramidFinished };
   }
 
-  /** Egy játékos lerakja az egyező értékű lapját a kezéből, és szétosztja a sor büntetését. */
+  /**
+   * Egy játékos lerakja az egyező értékű lapját a kezéből, és kiosztja a sor büntetését.
+   * A `distribution` a kliens saját döntése (kinek hány kortyot ad) — nem kötelező
+   * egyenlő elosztás —, csak azt ellenőrizzük, hogy pontosan a sor értékét osztja ki,
+   * valós, más játékosoknak, fejenként legalább 1 egész kortyot.
+   */
   playPyramidMatch(
     playerId: string,
     card: Card,
-    recipientPlayerIds: readonly string[],
+    distribution: Readonly<Record<string, number>>,
   ): PyramidPlayResult {
     if (this.phase !== 'pyramid') {
       throw new GameEngineError('Piramis-lapot csak piramis fázisban lehet lerakni.');
@@ -264,9 +269,21 @@ export class GameEngine {
     if (handIndex === -1 || !matches.some((m) => m.suit === card.suit && m.rank === card.rank)) {
       throw new GameEngineError('A megadott lap nem egyezik a felfordult piramis-lap értékével, vagy nincs a kezében.');
     }
+    for (const recipientId of Object.keys(distribution)) {
+      if (recipientId === playerId) {
+        throw new GameEngineError('Saját magadnak nem oszthatod ki a büntetést.');
+      }
+      this.getPlayer(recipientId);
+    }
+    try {
+      validateDistribution(currentSlot.rowValue, distribution);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Érvénytelen kiosztás.';
+      throw new GameEngineError(message);
+    }
+
     player.hand.splice(handIndex, 1);
-    const distribution = distributeToPlayers(currentSlot.rowValue, recipientPlayerIds);
-    return { playerId, card, distribution };
+    return { playerId, card, distribution: { ...distribution } };
   }
 
   /** Eldönti, ki buszozik: akinek a legtöbb lap maradt a kezében; döntetlennél újabb húzás dönt. */

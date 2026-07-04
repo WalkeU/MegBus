@@ -1,0 +1,12 @@
+# Fejlesztői image: nincs build lépés, a forráskód bind mountról fut, a
+# `npm run dev` (tsx watch) figyeli a fájlváltozásokat és automatikusan
+# újraindítja a szervert — ugyanazt tudja, mint a nodemon, csak natívan
+# érti a TypeScript-et külön ts-node/nodemon páros nélkül.
+FROM node:22-alpine
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+EXPOSE 3000
+CMD ["npm", "run", "dev"]
