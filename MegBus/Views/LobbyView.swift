@@ -3,6 +3,12 @@ import SwiftUI
 struct LobbyView: View {
     @ObservedObject var viewModel: GameViewModel
     @State private var isReady = false
+    @State private var penaltyLabelDraft = ""
+
+    private var canSavePenaltyLabel: Bool {
+        let trimmed = penaltyLabelDraft.trimmingCharacters(in: .whitespaces)
+        return viewModel.isHost && !trimmed.isEmpty && trimmed != viewModel.penaltyLabel && !viewModel.isBusy
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.spacing) {
@@ -25,6 +31,32 @@ struct LobbyView: View {
                 }
             }
             .padding(.top, 8)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Büntetés neve")
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.textSecondary)
+
+                if viewModel.isHost {
+                    TextField(viewModel.penaltyLabel, text: $penaltyLabelDraft)
+                        .textFieldStyle(.plain)
+                        .padding()
+                        .background(AppTheme.surfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous))
+                        .autocorrectionDisabled()
+
+                    Button("Mentés") {
+                        Task { await viewModel.setPenaltyLabel(penaltyLabelDraft.trimmingCharacters(in: .whitespaces)) }
+                    }
+                    .buttonStyle(PrimaryButtonStyle(isProminent: false))
+                    .disabled(!canSavePenaltyLabel)
+                } else {
+                    Text(viewModel.penaltyLabel)
+                        .font(.headline)
+                }
+            }
+            .cardSurface()
+            .onAppear { penaltyLabelDraft = viewModel.penaltyLabel }
 
             Spacer()
 

@@ -107,10 +107,10 @@ struct PyramidView: View {
         let remaining = rowValue - totalAssigned
 
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Kinek hány kortyot osztasz?")
+            Text("Kinek mennyi büntetést osztasz?")
                 .font(.subheadline)
                 .foregroundStyle(AppTheme.textSecondary)
-            Text("Kiosztva: \(totalAssigned) / \(rowValue) korty")
+            Text("Kiosztva: \(totalAssigned) / \(rowValue)")
                 .font(.footnote)
                 .foregroundStyle(remaining == 0 ? AppTheme.success : AppTheme.textSecondary)
 
@@ -167,14 +167,14 @@ struct PyramidView: View {
 
     private func pyramidDrinkPanel(units: Int) -> some View {
         VStack(spacing: 12) {
-            Text("Igyál \(units) kortyot!")
+            Text("\(viewModel.penaltyLabel): \(units)")
                 .font(.title3.bold())
                 .foregroundStyle(AppTheme.danger)
-            Text("A piramis addig nem folytatódik, amíg meg nem itta.")
+            Text("A piramis addig nem folytatódik, amíg nem nyugtázzák a büntetést.")
                 .font(.footnote)
                 .foregroundStyle(AppTheme.textSecondary)
 
-            Button("Megittam") {
+            Button("Megvolt") {
                 Task { await viewModel.acknowledgePyramidDrink() }
             }
             .buttonStyle(PrimaryButtonStyle())

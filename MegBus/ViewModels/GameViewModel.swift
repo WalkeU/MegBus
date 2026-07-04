@@ -51,6 +51,7 @@ final class GameViewModel: ObservableObject {
     var isHost: Bool { roomState?.players.first?.id == myPlayerId }
     var isMyTurn: Bool { roomState?.activePlayerId == myPlayerId }
     var isBusRider: Bool { busRiderId == myPlayerId }
+    var penaltyLabel: String { roomState?.penaltyLabel ?? defaultPenaltyLabel }
 
     /// A buszozó következő megválaszolandó kérdése: hibás tipp után mindig az elejéről indul.
     var currentBusQuestion: BusQuestion {
@@ -144,6 +145,10 @@ final class GameViewModel: ObservableObject {
 
     func setReady(_ ready: Bool) async {
         await run { try await connection.setReady(ready) }
+    }
+
+    func setPenaltyLabel(_ label: String) async {
+        await run { try await connection.setPenaltyLabel(label) }
     }
 
     // MARK: - 1-4. kör

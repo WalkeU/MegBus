@@ -98,9 +98,12 @@ struct RoomPlayer: Codable, Equatable, Identifiable {
     var connected: Bool
 }
 
+let defaultPenaltyLabel = "Büntetés"
+
 struct RoomState: Codable, Equatable {
     let code: String
     var phase: GamePhase
     var players: [RoomPlayer]
     var activePlayerId: String?
+    var penaltyLabel: String
 }

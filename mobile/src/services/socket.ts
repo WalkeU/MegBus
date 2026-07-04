@@ -118,6 +118,9 @@ export const rpc = {
   async setReady(ready: boolean): Promise<void> {
     await emitWithAck('setReady', { ready });
   },
+  async setPenaltyLabel(label: string): Promise<void> {
+    await emitWithAck('setPenaltyLabel', { label });
+  },
   async submitGuess(guess: RoundGuess): Promise<void> {
     await emitWithAck('submitGuess', { guess });
   },

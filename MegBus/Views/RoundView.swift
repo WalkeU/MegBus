@@ -104,11 +104,11 @@ struct RoundView: View {
 
     private func penaltyPanel(units: Int) -> some View {
         VStack(spacing: 12) {
-            Text("Igyál \(units) kortyot!")
+            Text("\(viewModel.penaltyLabel): \(units)")
                 .font(.title3.bold())
                 .foregroundStyle(AppTheme.danger)
 
-            Button("Megittam") {
+            Button("Megvolt") {
                 Task { await viewModel.acknowledgePenalty() }
             }
             .buttonStyle(PrimaryButtonStyle())

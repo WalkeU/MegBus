@@ -11,12 +11,17 @@ export interface RoomPlayer {
 
 export type RoomPhase = 'lobby' | 'in-game';
 
+export const DEFAULT_PENALTY_LABEL = 'Büntetés';
+export const MAX_PENALTY_LABEL_LENGTH = 40;
+
 export interface Room {
   readonly code: string;
   readonly hostId: string;
   readonly players: RoomPlayer[];
   phase: RoomPhase;
   engine: GameEngine | null;
+  /** A szoba létrehozója szabadon átnevezheti (pl. "Fekvőtámasz") — alapból "Büntetés". */
+  penaltyLabel: string;
 }
 
 export class RoomManagerError extends Error {
@@ -44,6 +49,7 @@ export class RoomManager {
       players: [{ id: host.id, name: host.name, ready: false, connected: true }],
       phase: 'lobby',
       engine: null,
+      penaltyLabel: DEFAULT_PENALTY_LABEL,
     };
     this.rooms.set(code, room);
     return room;
@@ -87,6 +93,23 @@ export class RoomManager {
       throw new RoomManagerError(`Ismeretlen játékos a szobában: ${playerId}`);
     }
     player.ready = ready;
+    return room;
+  }
+
+  /** Csak a szoba létrehozója hívhatja, és csak amíg a szoba a váróban van. */
+  setPenaltyLabel(code: string, playerId: string, label: string): Room {
+    const room = this.getRoom(code);
+    if (room.hostId !== playerId) {
+      throw new RoomManagerError('Csak a szoba létrehozója módosíthatja a büntetés nevét.');
+    }
+    if (room.phase !== 'lobby') {
+      throw new RoomManagerError('A büntetés neve csak a váróteremben módosítható.');
+    }
+    const trimmed = label.trim();
+    if (trimmed.length === 0) {
+      throw new RoomManagerError('A büntetés neve nem lehet üres.');
+    }
+    room.penaltyLabel = trimmed.slice(0, MAX_PENALTY_LABEL_LENGTH);
     return room;
   }
 

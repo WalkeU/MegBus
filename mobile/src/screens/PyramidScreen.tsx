@@ -7,7 +7,7 @@ import { PyramidCountdownRing } from '../components/PyramidCountdownRing';
 import { Surface } from '../components/Surface';
 import { colors, spacing, typography } from '../theme/theme';
 import { cardKey, type Card } from '../types/game';
-import { useGameStore } from '../store/gameStore';
+import { useGameStore, selectPenaltyLabel } from '../store/gameStore';
 
 // Alulról felfelé fordul: a legalsó sor (5 lap) 1 korty, a csúcs (1 lap) 5 korty —
 // pontosan a MegBus/Views/PyramidView.swift `pyramidRowSizes`/`revealIndexRange` mása.
@@ -24,6 +24,7 @@ function revealIndexRange(rowValue: number): [number, number] {
 export function PyramidScreen() {
   const pyramidFlips = useGameStore((s) => s.pyramidFlips);
   const pendingPyramidDrinkUnits = useGameStore((s) => s.pendingPyramidDrinkUnits);
+  const penaltyLabel = useGameStore(selectPenaltyLabel);
   const myHand = useGameStore((s) => s.myHand);
   const roomState = useGameStore((s) => s.roomState);
   const myPlayerId = useGameStore((s) => s.myPlayerId);
@@ -117,11 +118,13 @@ export function PyramidScreen() {
 
       {pendingPyramidDrinkUnits != null ? (
         <Surface style={styles.panel}>
-          <Text style={styles.penaltyText}>Igyál {pendingPyramidDrinkUnits} kortyot!</Text>
-          <Text style={styles.helperSmall}>
-            A piramis addig nem folytatódik, amíg meg nem itta.
+          <Text style={styles.penaltyText}>
+            {penaltyLabel}: {pendingPyramidDrinkUnits}
           </Text>
-          <Button title="Megittam" onPress={() => void acknowledgePyramidDrink()} disabled={isBusy} />
+          <Text style={styles.helperSmall}>
+            A piramis addig nem folytatódik, amíg nem nyugtázzák a büntetést.
+          </Text>
+          <Button title="Megvolt" onPress={() => void acknowledgePyramidDrink()} disabled={isBusy} />
         </Surface>
       ) : null}
 
@@ -150,9 +153,9 @@ export function PyramidScreen() {
 
       {cardToPlay ? (
         <Surface style={styles.panel}>
-          <Text style={styles.distributeLabel}>Kinek hány kortyot osztasz?</Text>
+          <Text style={styles.distributeLabel}>Kinek mennyi büntetést osztasz?</Text>
           <Text style={[styles.distributedCount, remaining === 0 && styles.distributedDone]}>
-            Kiosztva: {totalAssigned} / {currentRowValue} korty
+            Kiosztva: {totalAssigned} / {currentRowValue}
           </Text>
           {otherPlayers.map((player) => {
             const amount = amounts[player.id] ?? 0;

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { connectSocket, disconnectSocket, registerListeners, rpc } from '../services/socket';
 import { nextBusQuestion } from '../utils/busQuestions';
-import { cardsEqual } from '../types/game';
+import { cardsEqual, DEFAULT_PENALTY_LABEL } from '../types/game';
 import type {
   BusGuess,
   BusQuestion,
@@ -50,6 +50,7 @@ interface GameActions {
   createRoom: (playerName: string) => Promise<void>;
   joinRoom: (code: string, playerName: string) => Promise<void>;
   setReady: (ready: boolean) => Promise<void>;
+  setPenaltyLabel: (label: string) => Promise<void>;
   submitGuess: (guess: RoundGuess) => Promise<void>;
   acknowledgePenalty: () => Promise<void>;
   beginPyramidMatch: () => Promise<void>;
@@ -117,6 +118,7 @@ function toRoomState(state: RoomBroadcastState): RoomState {
     phase: state.phase as GamePhase,
     players: state.players.map((p) => ({ ...p })),
     activePlayerId: state.activePlayerId,
+    penaltyLabel: state.penaltyLabel,
   };
 }
 
@@ -232,6 +234,8 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     setReady: (ready) => run(() => rpc.setReady(ready)),
 
+    setPenaltyLabel: (label) => run(() => rpc.setPenaltyLabel(label)),
+
     submitGuess: (guess) => run(() => rpc.submitGuess(guess)),
 
     acknowledgePenalty: () =>
@@ -314,4 +318,8 @@ export function selectActivePlayerName(state: GameStore): string | null {
   const id = state.roomState?.activePlayerId;
   if (!id) return null;
   return state.roomState?.players.find((p) => p.id === id)?.name ?? null;
+}
+
+export function selectPenaltyLabel(state: GameStore): string {
+  return state.roomState?.penaltyLabel ?? DEFAULT_PENALTY_LABEL;
 }

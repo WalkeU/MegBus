@@ -43,6 +43,8 @@ protocol GameConnection: AnyObject {
     func createRoom(playerName: String) async throws -> (roomCode: String, playerId: String)
     func joinRoom(code: String, playerName: String) async throws -> String
     func setReady(_ ready: Bool) async throws
+    /// Csak a szoba létrehozója hívhatja, csak a váróteremben — mindenki ugyanazt látja.
+    func setPenaltyLabel(_ label: String) async throws
     func submitGuess(_ guess: String) async throws
     /// Nyugtázza a hibás tippért járó büntetést — csak ez engedi tovább a kört.
     func acknowledgePenalty() async throws

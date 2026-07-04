@@ -43,11 +43,14 @@ export interface RoomPlayer {
   connected: boolean;
 }
 
+export const DEFAULT_PENALTY_LABEL = 'Büntetés';
+
 export interface RoomState {
   readonly code: string;
   phase: GamePhase;
   players: RoomPlayer[];
   activePlayerId?: string;
+  penaltyLabel: string;
 }
 
 // ---- Wire (Socket.IO) contract ----
@@ -73,6 +76,7 @@ export interface ClientToServerEvents {
     ack: (res: JoinRoomResponse) => void,
   ) => void;
   setReady: (payload: { ready: boolean }, ack: (res: AckResponse) => void) => void;
+  setPenaltyLabel: (payload: { label: string }, ack: (res: AckResponse) => void) => void;
   submitGuess: (payload: { guess: RoundGuess }, ack: (res: AckResponse) => void) => void;
   acknowledgePenalty: (ack: (res: AckResponse) => void) => void;
   beginPyramidMatch: (ack: (res: AckResponse) => void) => void;
@@ -97,6 +101,7 @@ export interface RoomBroadcastState {
     connected: boolean;
   }>;
   readonly activePlayerId?: string;
+  readonly penaltyLabel: string;
 }
 
 export interface ServerToClientEvents {

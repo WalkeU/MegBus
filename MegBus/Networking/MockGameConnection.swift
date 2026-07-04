@@ -13,6 +13,7 @@ final class MockGameConnection: GameConnection {
         RoomPlayer(id: "me", name: "Te", ready: false, connected: true),
         RoomPlayer(id: "p2", name: "Anna", ready: false, connected: true),
     ]
+    private var penaltyLabel = defaultPenaltyLabel
 
     func connect() async throws {}
 
@@ -24,6 +25,11 @@ final class MockGameConnection: GameConnection {
     func joinRoom(code: String, playerName: String) async throws -> String {
         emitRoomUpdated(phase: .lobby)
         return myPlayerId
+    }
+
+    func setPenaltyLabel(_ label: String) async throws {
+        penaltyLabel = label
+        emitRoomUpdated(phase: .lobby)
     }
 
     func setReady(_ ready: Bool) async throws {
@@ -68,7 +74,9 @@ final class MockGameConnection: GameConnection {
     func leaveRoom() async throws {}
 
     private func emitRoomUpdated(phase: GamePhase) {
-        let state = RoomState(code: roomCode, phase: phase, players: players, activePlayerId: myPlayerId)
+        let state = RoomState(
+            code: roomCode, phase: phase, players: players, activePlayerId: myPlayerId, penaltyLabel: penaltyLabel
+        )
         onEvent?(.roomUpdated(state))
     }
 }

@@ -28,6 +28,7 @@ function toBroadcastState(room: ReturnType<RoomManager['getRoom']>): RoomBroadca
     phase: room.engine ? room.engine.phase : room.phase,
     players: room.players.map((p) => ({ id: p.id, name: p.name, ready: p.ready, connected: p.connected })),
     ...(room.engine ? { activePlayerId: room.engine.activePlayer.id } : {}),
+    penaltyLabel: room.penaltyLabel,
   };
 }
 
@@ -160,6 +161,22 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
             phase: engine.phase,
           });
         }
+      } catch (error) {
+        ack(errorAck(error));
+      }
+    });
+
+    socket.on('setPenaltyLabel', ({ label }, ack) => {
+      ack = safeAck(ack);
+      const roomCode = currentRoomCode(socket);
+      if (!roomCode) {
+        ack({ ok: false, error: 'A socket nincs egy szobához sem csatlakoztatva.' });
+        return;
+      }
+      try {
+        roomManager.setPenaltyLabel(roomCode, socket.id, label);
+        ack({ ok: true });
+        broadcastRoom(roomCode);
       } catch (error) {
         ack(errorAck(error));
       }

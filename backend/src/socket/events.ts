@@ -15,6 +15,8 @@ export interface ClientToServerEvents {
     ack: (response: JoinRoomResponse) => void,
   ) => void;
   setReady: (payload: { ready: boolean }, ack: (response: AckResponse) => void) => void;
+  /** Csak a szoba létrehozója hívhatja, csak a váróteremben — mindenki ugyanazt a nevet látja. */
+  setPenaltyLabel: (payload: { label: string }, ack: (response: AckResponse) => void) => void;
   submitGuess: (payload: { guess: RoundGuess }, ack: (response: AckResponse) => void) => void;
   /** Nyugtázza a hibás tippért járó büntetést — csak ez engedi tovább a kört a következő játékosra/körre. */
   acknowledgePenalty: (ack: (response: AckResponse) => void) => void;
@@ -78,4 +80,5 @@ export interface RoomBroadcastState {
   readonly phase: string;
   readonly players: ReadonlyArray<{ id: string; name: string; ready: boolean; connected: boolean }>;
   readonly activePlayerId?: string;
+  readonly penaltyLabel: string;
 }

@@ -1,18 +1,27 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button } from '../components/Button';
 import { PlayerBadge } from '../components/PlayerBadge';
-import { colors, spacing, typography } from '../theme/theme';
-import { useGameStore } from '../store/gameStore';
+import { Surface } from '../components/Surface';
+import { colors, radii, spacing, typography } from '../theme/theme';
+import { useGameStore, selectIsHost, selectPenaltyLabel } from '../store/gameStore';
 
 export function LobbyScreen() {
   const roomState = useGameStore((s) => s.roomState);
   const myPlayerId = useGameStore((s) => s.myPlayerId);
   const setReady = useGameStore((s) => s.setReady);
+  const setPenaltyLabel = useGameStore((s) => s.setPenaltyLabel);
   const leaveRoom = useGameStore((s) => s.leaveRoom);
   const isBusy = useGameStore((s) => s.isBusy);
+  const isHost = useGameStore(selectIsHost);
+  const penaltyLabel = useGameStore(selectPenaltyLabel);
 
   const myself = roomState?.players.find((p) => p.id === myPlayerId);
   const isReady = myself?.ready ?? false;
+
+  const [labelDraft, setLabelDraft] = useState(penaltyLabel);
+  const trimmedDraft = labelDraft.trim();
+  const canSaveLabel = isHost && trimmedDraft.length > 0 && trimmedDraft !== penaltyLabel && !isBusy;
 
   return (
     <View style={styles.container}>
@@ -29,6 +38,31 @@ export function LobbyScreen() {
           <PlayerBadge key={player.id} player={player} />
         ))}
       </ScrollView>
+
+      <Surface style={styles.penaltyPanel}>
+        <Text style={styles.helper}>Büntetés neve</Text>
+        {isHost ? (
+          <>
+            <TextInput
+              style={styles.input}
+              value={labelDraft}
+              onChangeText={setLabelDraft}
+              placeholder={penaltyLabel}
+              placeholderTextColor={colors.textSecondary}
+              maxLength={40}
+              autoCorrect={false}
+            />
+            <Button
+              title="Mentés"
+              onPress={() => void setPenaltyLabel(trimmedDraft)}
+              prominent={false}
+              disabled={!canSaveLabel}
+            />
+          </>
+        ) : (
+          <Text style={styles.penaltyValue}>{penaltyLabel}</Text>
+        )}
+      </Surface>
 
       <View style={styles.flexSpacer} />
 
@@ -69,6 +103,22 @@ const styles = StyleSheet.create({
   helper: {
     fontSize: typography.footnote.fontSize,
     color: colors.textSecondary,
+  },
+  penaltyPanel: {
+    gap: 10,
+  },
+  penaltyValue: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  input: {
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radii.control,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: colors.textPrimary,
+    fontSize: 16,
   },
   playerList: {
     gap: 10,

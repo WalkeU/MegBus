@@ -5,7 +5,7 @@ import { Surface } from '../components/Surface';
 import { colors, spacing, typography } from '../theme/theme';
 import { roundTitleForPhase } from '../utils/busQuestions';
 import { suitDisplayNames, suitSymbols } from '../utils/cardLabels';
-import { useGameStore, selectActivePlayerName, selectIsMyTurn } from '../store/gameStore';
+import { useGameStore, selectActivePlayerName, selectIsMyTurn, selectPenaltyLabel } from '../store/gameStore';
 import { SUITS, type GamePhase, type RoundGuess } from '../types/game';
 
 const DUMMY_FACE_DOWN_CARD = { suit: 'spades', rank: 2 } as const;
@@ -21,6 +21,7 @@ export function RoundScreen() {
   const lastDrawnCard = useGameStore((s) => s.lastDrawnCard);
   const lastGuessCorrect = useGameStore((s) => s.lastGuessCorrect);
   const pendingPenaltyUnits = useGameStore((s) => s.pendingPenaltyUnits);
+  const penaltyLabel = useGameStore(selectPenaltyLabel);
   const myHand = useGameStore((s) => s.myHand);
   const isBusy = useGameStore((s) => s.isBusy);
   const submitGuess = useGameStore((s) => s.submitGuess);
@@ -58,8 +59,10 @@ export function RoundScreen() {
 
       {pendingPenaltyUnits != null ? (
         <Surface style={styles.panel}>
-          <Text style={styles.penaltyText}>Igyál {pendingPenaltyUnits} kortyot!</Text>
-          <Button title="Megittam" onPress={() => void acknowledgePenalty()} disabled={isBusy} />
+          <Text style={styles.penaltyText}>
+            {penaltyLabel}: {pendingPenaltyUnits}
+          </Text>
+          <Button title="Megvolt" onPress={() => void acknowledgePenalty()} disabled={isBusy} />
         </Surface>
       ) : isMyTurn ? (
         <GuessButtons phase={phase} onGuess={guess} disabled={isBusy} />

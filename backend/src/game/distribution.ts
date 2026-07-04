@@ -6,8 +6,8 @@ export class InvalidDistributionError extends Error {
 }
 
 /**
- * Ellenőrzi, hogy egy játékos által megadott korty-kiosztás érvényes-e:
- * legalább egy címzett van, minden érték legalább 1 egész korty, és az
+ * Ellenőrzi, hogy egy játékos által megadott büntetés-kiosztás érvényes-e:
+ * legalább egy címzett van, minden érték legalább 1 egész egység, és az
  * összegük pontosan `totalUnits`. A kliens szabadon dönti el, ki mennyit kap
  * (nem kötelező egyenlő elosztás) — ez csak azt garantálja, hogy a teljes
  * mennyiség kiosztásra kerül, se többet, se kevesebbet.
@@ -24,14 +24,14 @@ export function validateDistribution(
   let sum = 0;
   for (const [, units] of entries) {
     if (!Number.isInteger(units) || units < 1) {
-      throw new InvalidDistributionError('Minden címzettnek legalább 1 egész kortyot kell adni.');
+      throw new InvalidDistributionError('Minden címzettnek legalább 1 egész egységet kell adni.');
     }
     sum += units;
   }
 
   if (sum !== totalUnits) {
     throw new InvalidDistributionError(
-      `A kiosztott korty-mennyiségnek pontosan ${totalUnits}-nak kell lennie (jelenleg ${sum}).`,
+      `A kiosztott mennyiségnek pontosan ${totalUnits}-nak kell lennie (jelenleg ${sum}).`,
     );
   }
 }

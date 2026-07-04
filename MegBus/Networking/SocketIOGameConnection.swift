@@ -70,6 +70,10 @@ final class SocketIOGameConnection: GameConnection {
         _ = try await emitWithAck("setReady", ["ready": ready])
     }
 
+    func setPenaltyLabel(_ label: String) async throws {
+        _ = try await emitWithAck("setPenaltyLabel", ["label": label])
+    }
+
     func submitGuess(_ guess: String) async throws {
         _ = try await emitWithAck("submitGuess", ["guess": guess])
     }
@@ -240,7 +244,8 @@ final class SocketIOGameConnection: GameConnection {
             return RoomPlayer(id: id, name: name, ready: ready, connected: connected)
         }
         let activePlayerId = payload["activePlayerId"] as? String
-        return RoomState(code: code, phase: phase, players: players, activePlayerId: activePlayerId)
+        let penaltyLabel = payload["penaltyLabel"] as? String ?? defaultPenaltyLabel
+        return RoomState(code: code, phase: phase, players: players, activePlayerId: activePlayerId, penaltyLabel: penaltyLabel)
     }
 }
 #endif
