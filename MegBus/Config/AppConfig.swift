@@ -2,10 +2,10 @@ import Foundation
 
 /// A backend szerver címe egy helyen, könnyen szerkeszthetően.
 ///
-/// Szimulátorból a Mac `localhost`-ja elérhető közvetlenül; fizikai eszközön a Mac
-/// Tailscale-IP-jét (vagy LAN-IP-jét) használjuk, hogy ne kelljen ugyanazon a LAN-on
-/// lenni — csak a Tailscale app fusson és legyen bejelentkezve mindkét eszközön.
-/// Production build előtt cseréld a valós HTTPS domain-re (Caddy mögötti backend).
+/// Éles szerver, Nginx Proxy Manager mögött, HTTPS/WSS-en (a socket.io-client-swift
+/// HTTPS URL esetén automatikusan WSS-re vált). Helyi fejlesztéshez ideiglenesen
+/// átírhatod a Mac LAN-IP-jére (pl. "http://192.168.0.150:3001"), ha helyi
+/// backendhez akarsz kötni.
 enum AppConfig {
-    static let backendServerURL = URL(string: "http://192.168.0.150:3001")!
+    static let backendServerURL = URL(string: "https://megbus.walkegabor.hu")!
 }
