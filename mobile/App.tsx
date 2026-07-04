@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography } from './src/theme/theme';
 import { checkServerHealth } from './src/services/health';
 import { useGameStore } from './src/store/gameStore';
@@ -91,18 +92,20 @@ export default function App() {
   }, [errorMessage, clearError]);
 
   return (
-    <View style={styles.root}>
-      <StatusBar style="light" />
-      <Animated.View style={[styles.flex, { opacity }]}>
-        {serverStatus === 'checking' ? (
-          <CheckingScreen />
-        ) : serverStatus === 'unreachable' ? (
-          <MaintenanceScreen onRetry={handleManualRetry} />
-        ) : (
-          <ScreenSwitch screen={screen} />
-        )}
-      </Animated.View>
-    </View>
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.root} edges={['top', 'right', 'bottom', 'left']}>
+        <StatusBar style="light" />
+        <Animated.View style={[styles.flex, { opacity }]}> 
+          {serverStatus === 'checking' ? (
+            <CheckingScreen />
+          ) : serverStatus === 'unreachable' ? (
+            <MaintenanceScreen onRetry={handleManualRetry} />
+          ) : (
+            <ScreenSwitch screen={screen} />
+          )}
+        </Animated.View>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 

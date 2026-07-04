@@ -1,0 +1,25 @@
+# Override réteg, ha a szerveren Nginx Proxy Manager (NPM) mögé teszed a backendet.
+# Használat (a docker-compose.yml MELLETT, azt kiegészítve):
+#   NPM_NETWORK_NAME=<npm hálózat neve> docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d --build backend
+#
+# Miért kell ez? Az NPM saját Docker konténerben fut, saját hálózati névtérrel —
+# a host 127.0.0.1-e neki NEM ugyanaz, mint a hoszt gépnek, tehát a
+# `127.0.0.1:3000` (amit a docker-compose.yml a hoszton publikál) nem érhető el
+# NPM-ből. A megoldás: közös Docker hálózatra tesszük a két konténert, és NPM a
+# backend konténer NEVÉN (megbus-backend:3000) éri el, IP/port helyett.
+#
+# Az NPM hálózat nevének megtalálása:
+#   docker network ls
+#   (jellemzően "<mappanév>_default" vagy "nginxproxymanager_default" — az a
+#   hálózat, amin az NPM konténered fut; ellenőrizheted így is:
+#   docker inspect <npm-konténer-neve> --format '{{json .NetworkSettings.Networks}}')
+services:
+  backend:
+    networks:
+      - default
+      - npm
+
+networks:
+  npm:
+    external: true
+    name: "${NPM_NETWORK_NAME:?Add meg az NPM Docker hálózat nevét, pl. NPM_NETWORK_NAME=nginxproxymanager_default}"

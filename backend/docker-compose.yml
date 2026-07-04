@@ -12,6 +12,12 @@ services:
       - .env
     expose:
       - "3000"
+    # Csak localhostról elérhető port — ha a szerveren már fut egy saját
+    # reverse proxy (nginx, más Caddy stb.), az ezen keresztül éri el a
+    # backendet, és ilyenkor a lenti `caddy` service-t el sem indítod
+    # (lásd README "Saját reverse proxy mögé" szakasza).
+    ports:
+      - "127.0.0.1:3000:3000"
 
   caddy:
     container_name: megbus-caddy

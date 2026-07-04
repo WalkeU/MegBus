@@ -109,14 +109,122 @@ docker compose logs -f backend
 docker compose logs -f caddy
 ```
 
+### Saját reverse proxy mögé (ha már fut más proxy a 80/443-on)
+
+Ha a szerveren már van egy másik webszerver/proxy (nginx, egy másik Caddy-
+instance, Nginx Proxy Manager stb.), ami foglalja a 80/443-as portot más
+oldalakhoz, a fenti beépített `caddy` service-t **nem indítod el** — csak a
+backendet. Fontos: a Socket.IO WebSocket-re vált, tehát a proxy-konfignak
+támogatnia (és tovább kell engednie) az `Upgrade`/`Connection` fejléceket
+(Nginx Proxy Managerben ez a "Websockets Support" kapcsoló).
+
+#### Nginx Proxy Manager (NPM) esetén
+
+Az NPM egy **saját Docker konténerben** fut, ezért a backend konténer
+`127.0.0.1:3000`-es host-porton publikált címét **nem éri el közvetlenül**
+(más a hálózati névtere, mint a hoszt gépnek). A megoldás: közös Docker
+hálózatra tesszük a két konténert, hogy NPM a backendet a konténer NEVÉN
+érhesse el, IP/port helyett. Ehhez van egy külön override fájl
+(`docker-compose.npm.yml`), ami ezt hozzáadja anélkül, hogy a többi
+telepítési módot (alap Caddy, sima nginx) érintené:
+
+1. **Nézd meg, milyen Docker hálózaton fut az NPM konténered:**
+   ```
+   docker network ls
+   ```
+   Jellemzően `nginxproxymanager_default` vagy `<mappanév>_default` néven
+   fut, attól függően, hogyan telepítetted. Ha nem egyértelmű, nézd meg így:
+   ```
+   docker inspect <npm-konténer-neve> --format '{{json .NetworkSettings.Networks}}'
+   ```
+
+2. **Indítsd a backendet erre a hálózatra kötve:**
+   ```
+   NPM_NETWORK_NAME=nginxproxymanager_default docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d --build backend
+   ```
+   (a `nginxproxymanager_default`-et cseréld a saját hálózatod nevére).
+
+3. **Az NPM admin felületén** hozz létre egy új Proxy Host-ot:
+   - **Domain Names**: `megbus.walkegabor.hu`
+   - **Scheme**: `http`
+   - **Forward Hostname / IP**: `megbus-backend` (ez a backend konténer neve —
+     mivel közös hálózaton vannak, NPM a Docker DNS-en keresztül feloldja)
+   - **Forward Port**: `3000`
+   - **Websockets Support**: **bekapcsolva** — enélkül a Socket.IO nem fog
+     működni, csak a sima HTTP `/health` végpont
+   - **SSL** fülön: kérj Let's Encrypt tanúsítványt, "Force SSL" bekapcsolva
+
+4. **Ellenőrzés:**
+   ```
+   curl https://megbus.walkegabor.hu/health   # {"status":"ok"}
+   ```
+
+#### Sima nginx (nem NPM, hanem közvetlen konfigfájl)
+
+Ha a meglévő proxy egyszerű, konfigfájlból kezelt nginx (nem NPM), akkor a
+`127.0.0.1:3000` közvetlenül elérhető neki (ugyanazon a hoszton fut, nincs
+Docker-hálózati elszigetelés), csak indítsd `docker compose up -d --build backend`-del,
+és add hozzá ezt a szerver-blokkot:
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name megbus.walkegabor.hu;
+
+    # a saját, már meglévő TLS-tanúsítvány-kezelésed (certbot stb.) idekerül
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+}
+```
+
+**Caddy** (ha a meglévő proxy is Caddy — egyszerűbb, a WebSocket-upgrade-et
+automatikusan kezeli, nem kell külön beállítani), tedd hozzá a saját
+Caddyfile-odhoz:
+```
+megbus.walkegabor.hu {
+    reverse_proxy 127.0.0.1:3000
+}
+```
+
+Utána reload-old a saját proxydat (pl. `nginx -s reload` vagy
+`systemctl reload caddy`, attól függően, mi fut), és állítsd be a DNS
+A-rekordot: `megbus.walkegabor.hu` → a szerver publikus IP-je.
+
+Ellenőrzés:
+```
+curl https://megbus.walkegabor.hu/health   # {"status":"ok"}
+```
+
 ### Az iOS app bekötése éles szerverhez
 
-A `MegBus/ContentView.swift`-ben lévő `backendServerURL`-t állítsd a domainedre:
+A `MegBus/Config/AppConfig.swift`-ben lévő `backendServerURL`-t állítsd a domainedre:
 
 ```swift
-private let backendServerURL = URL(string: "https://DOMAIN")!
+static let backendServerURL = URL(string: "https://DOMAIN")!
 ```
 
 A `socket.io-client-swift` HTTPS URL esetén automatikusan WSS-re (titkosított
 WebSocket) vált — ez éles App Store-os buildhez amúgy is kötelező (App Transport
 Security nem enged sima HTTP-t egy kiadott appban).
+
+### A React Native (Expo) app bekötése éles szerverhez
+
+A `mobile/` projektben a szerver címe a `EXPO_PUBLIC_SERVER_URL` env változóval
+(vagy alapértelmezetten `mobile/src/services/config.ts`-ben) van megadva:
+
+```
+EXPO_PUBLIC_SERVER_URL=https://megbus.walkegabor.hu npx expo start
+```
+
+Éles buildhez (`eas build` / `expo run:ios`) ugyanezt az env változót kell
+beállítani build időben, vagy egyszerűen átírni a `config.ts`-ben lévő
+alapértelmezett URL-t.
