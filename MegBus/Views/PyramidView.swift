@@ -47,7 +47,8 @@ struct PyramidView: View {
             if viewModel.pyramidFlips.count < 15 {
                 PyramidCountdownRing(
                     flipCount: viewModel.pyramidFlips.count,
-                    isPaused: viewModel.pendingPyramidDrinkUnits != nil || cardToPlay != nil
+                    isPaused: viewModel.pendingPyramidDrinkUnits != nil || cardToPlay != nil,
+                    intervalMs: viewModel.gameSettings.pyramidFlipIntervalMs
                 )
             }
 

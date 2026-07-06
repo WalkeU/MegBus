@@ -4,6 +4,7 @@ struct LobbyView: View {
     @ObservedObject var viewModel: GameViewModel
     @State private var isReady = false
     @State private var penaltyLabelDraft = ""
+    @State private var settingsOpen = false
 
     private var canSavePenaltyLabel: Bool {
         let trimmed = penaltyLabelDraft.trimmingCharacters(in: .whitespaces)
@@ -58,6 +59,11 @@ struct LobbyView: View {
             .cardSurface()
             .onAppear { penaltyLabelDraft = viewModel.penaltyLabel }
 
+            if viewModel.isHost {
+                Button("Játékbeállítások") { settingsOpen = true }
+                    .buttonStyle(PrimaryButtonStyle(isProminent: false))
+            }
+
             Spacer()
 
             Button {
@@ -80,6 +86,9 @@ struct LobbyView: View {
         }
         .padding(24)
         .appBackground()
+        .sheet(isPresented: $settingsOpen) {
+            GameSettingsView(viewModel: viewModel)
+        }
     }
 }
 

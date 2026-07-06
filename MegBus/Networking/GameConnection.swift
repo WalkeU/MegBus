@@ -23,7 +23,7 @@ enum GameEvent {
     case pyramidMatchPlayed(playerId: String, card: Card, distribution: [String: Int])
     case busRiderSelected(riderId: String, deckRemaining: Int)
     case busQuestionResolved(
-        riderId: String, question: BusQuestion, card: Card, correct: Bool, exitedBus: Bool, deckRemaining: Int
+        riderId: String, question: RoundType, card: Card, correct: Bool, exitedBus: Bool, deckRemaining: Int
     )
     case gameFinished(riderId: String)
     case errorOccurred(message: String)
@@ -45,7 +45,10 @@ protocol GameConnection: AnyObject {
     func setReady(_ ready: Bool) async throws
     /// Csak a szoba létrehozója hívhatja, csak a váróteremben — mindenki ugyanazt látja.
     func setPenaltyLabel(_ label: String) async throws
-    func submitGuess(_ guess: String) async throws
+    /// Csak a szoba létrehozója hívhatja, csak a váróteremben — a körök típusa/sorrendje/
+    /// büntetése és a piramis-sorok büntetése állítható vele.
+    func setGameSettings(_ settings: GameSettings) async throws
+    func submitGuess(_ guess: RoundGuessValue) async throws
     /// Nyugtázza a hibás tippért járó büntetést — csak ez engedi tovább a kört.
     func acknowledgePenalty() async throws
     /// Jelzi a szervernek, hogy a lerakást fontolgatja — ettől a piramis fordítása szünetel.
@@ -56,7 +59,7 @@ protocol GameConnection: AnyObject {
     func playPyramidMatch(card: Card, distribution: [String: Int]) async throws
     /// Nyugtázza a piramis-lerakásból kapott ivást — amíg valamelyik címzett nem teszi meg, a piramis szünetel.
     func acknowledgePyramidDrink() async throws
-    func answerBus(_ guess: String) async throws
+    func answerBus(_ guess: RoundGuessValue) async throws
     func requestNewRound() async throws
     func leaveRoom() async throws
 }

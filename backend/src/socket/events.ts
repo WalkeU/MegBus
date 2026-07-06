@@ -1,5 +1,6 @@
-import { BusGuess, BusQuestion } from '../game/busRound';
+import { BusGuess } from '../game/busRound';
 import { RoundGuess } from '../game/gameEngine';
+import { GameSettings, RoundType } from '../game/roundTypes';
 import { Rank, Suit } from '../game/types';
 
 export interface WireCard {
@@ -17,6 +18,9 @@ export interface ClientToServerEvents {
   setReady: (payload: { ready: boolean }, ack: (response: AckResponse) => void) => void;
   /** Csak a szoba létrehozója hívhatja, csak a váróteremben — mindenki ugyanazt a nevet látja. */
   setPenaltyLabel: (payload: { label: string }, ack: (response: AckResponse) => void) => void;
+  /** Csak a szoba létrehozója hívhatja, csak a váróteremben — a körök típusa/sorrendje/
+   * büntetése és a piramis-sorok büntetése állítható vele. */
+  setGameSettings: (payload: { settings: GameSettings }, ack: (response: AckResponse) => void) => void;
   submitGuess: (payload: { guess: RoundGuess }, ack: (response: AckResponse) => void) => void;
   /** Nyugtázza a hibás tippért járó büntetést — csak ez engedi tovább a kört a következő játékosra/körre. */
   acknowledgePenalty: (ack: (response: AckResponse) => void) => void;
@@ -50,7 +54,7 @@ export interface ServerToClientEvents {
   busQuestionResolved: (
     payload: {
       riderId: string;
-      question: BusQuestion;
+      question: RoundType;
       card: WireCard;
       correct: boolean;
       exitedBus: boolean;
@@ -81,4 +85,5 @@ export interface RoomBroadcastState {
   readonly players: ReadonlyArray<{ id: string; name: string; ready: boolean; connected: boolean }>;
   readonly activePlayerId?: string;
   readonly penaltyLabel: string;
+  readonly gameSettings: GameSettings;
 }

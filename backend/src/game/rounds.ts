@@ -1,7 +1,8 @@
-import { Card, Suit, SuitColor, suitColor } from './types';
+import { Card, Rank, Suit, SuitColor, suitColor } from './types';
 
 export type BiggerSmallerGuess = 'bigger' | 'smaller';
 export type BetweenOutsideGuess = 'between' | 'outside';
+export type YesNoGuess = 'yes' | 'no';
 
 export class EqualRankError extends Error {
   constructor() {
@@ -48,4 +49,15 @@ export function evaluateBetweenOutside(
 /** 4. kör — Milyen szín? */
 export function evaluateSuitGuess(card: Card, guess: Suit): boolean {
   return card.suit === guess;
+}
+
+/** "Volt-e már ilyen érték?" — igaz, ha a lehúzott lap rangja szerepel a korábbi lapok közt. */
+export function evaluateSeenBefore(priorCards: readonly Card[], card: Card, guess: YesNoGuess): boolean {
+  const seen = priorCards.some((prior) => prior.rank === card.rank);
+  return (seen ? 'yes' : 'no') === guess;
+}
+
+/** "Pontosan melyik érték?" — a legnehezebb tipp, 13 lehetséges rang közül. */
+export function evaluateExactRank(card: Card, guess: Rank): boolean {
+  return card.rank === guess;
 }

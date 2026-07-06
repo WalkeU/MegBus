@@ -1,15 +1,15 @@
 import { create } from 'zustand';
 import { connectSocket, disconnectSocket, registerListeners, rpc } from '../services/socket';
-import { nextBusQuestion } from '../utils/busQuestions';
-import { cardsEqual, DEFAULT_PENALTY_LABEL } from '../types/game';
+import { cardsEqual, DEFAULT_GAME_SETTINGS, DEFAULT_PENALTY_LABEL } from '../types/game';
 import type {
   BusGuess,
-  BusQuestion,
   Card,
   GamePhase,
+  GameSettings,
   RoomBroadcastState,
   RoomState,
   RoundGuess,
+  RoundType,
 } from '../types/game';
 
 export type Screen = 'home' | 'lobby' | 'round' | 'pyramid' | 'bus' | 'gameOver';
@@ -21,7 +21,7 @@ export interface PyramidFlipDisplay {
 }
 
 export interface BusResultDisplay {
-  readonly question: BusQuestion;
+  readonly question: RoundType;
   readonly card: Card;
   readonly correct: boolean;
 }
@@ -51,6 +51,7 @@ interface GameActions {
   joinRoom: (code: string, playerName: string) => Promise<void>;
   setReady: (ready: boolean) => Promise<void>;
   setPenaltyLabel: (label: string) => Promise<void>;
+  setGameSettings: (settings: GameSettings) => Promise<void>;
   submitGuess: (guess: RoundGuess) => Promise<void>;
   acknowledgePenalty: () => Promise<void>;
   beginPyramidMatch: () => Promise<void>;
@@ -95,21 +96,11 @@ const initialTransientState: Pick<
 };
 
 function screenForPhase(phase: GamePhase): Screen {
-  switch (phase) {
-    case 'lobby':
-      return 'lobby';
-    case 'round1':
-    case 'round2':
-    case 'round3':
-    case 'round4':
-      return 'round';
-    case 'pyramid':
-      return 'pyramid';
-    case 'bus':
-      return 'bus';
-    case 'finished':
-      return 'gameOver';
-  }
+  if (phase === 'lobby') return 'lobby';
+  if (phase === 'pyramid') return 'pyramid';
+  if (phase === 'bus') return 'bus';
+  if (phase === 'finished') return 'gameOver';
+  return 'round'; // `round${N}` — tetszőleges számú/sorrendű kör lehet
 }
 
 function toRoomState(state: RoomBroadcastState): RoomState {
@@ -119,6 +110,7 @@ function toRoomState(state: RoomBroadcastState): RoomState {
     players: state.players.map((p) => ({ ...p })),
     activePlayerId: state.activePlayerId,
     penaltyLabel: state.penaltyLabel,
+    gameSettings: state.gameSettings,
   };
 }
 
@@ -236,6 +228,8 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     setPenaltyLabel: (label) => run(() => rpc.setPenaltyLabel(label)),
 
+    setGameSettings: (settings) => run(() => rpc.setGameSettings(settings)),
+
     submitGuess: (guess) => run(() => rpc.submitGuess(guess)),
 
     acknowledgePenalty: () =>
@@ -308,10 +302,26 @@ export function selectIsBusRider(state: GameStore): boolean {
   return state.busRiderId === state.myPlayerId;
 }
 
-export function selectCurrentBusQuestion(state: GameStore): BusQuestion {
-  const last = state.busLastResult;
-  if (!last || !last.correct) return 'redBlack';
-  return nextBusQuestion(last.question) ?? 'redBlack';
+export function selectGameSettings(state: GameStore): GameSettings {
+  return state.roomState?.gameSettings ?? DEFAULT_GAME_SETTINGS;
+}
+
+/** Az aktuális kör TÍPUSA a `phase` ("roundN") stringből kinyert index alapján. */
+export function selectCurrentRoundType(state: GameStore): RoundType | null {
+  const phase = state.roomState?.phase;
+  if (!phase || phase === 'lobby' || phase === 'pyramid' || phase === 'bus' || phase === 'finished') {
+    return null;
+  }
+  const index = Number(phase.replace('round', '')) - 1;
+  return selectGameSettings(state).rounds[index]?.type ?? null;
+}
+
+/** A buszozó eddig hibátlanul megválaszolt kérdéseinek száma adja az aktuális
+ * kör-lista-indexet — hibás válasz esetén ez 0-ra esik vissza (lásd busAttemptCards). */
+export function selectCurrentBusQuestion(state: GameStore): RoundType {
+  const rounds = selectGameSettings(state).rounds;
+  const index = state.busAttemptCards.length;
+  return rounds[index]?.type ?? rounds[0].type;
 }
 
 export function selectActivePlayerName(state: GameStore): string | null {

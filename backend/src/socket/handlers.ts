@@ -10,8 +10,6 @@ import {
   ServerToClientEvents,
 } from './events';
 
-export const PYRAMID_FLIP_INTERVAL_MS = 5000;
-
 type AppServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
@@ -29,6 +27,7 @@ function toBroadcastState(room: ReturnType<RoomManager['getRoom']>): RoomBroadca
     players: room.players.map((p) => ({ id: p.id, name: p.name, ready: p.ready, connected: p.connected })),
     ...(room.engine ? { activePlayerId: room.engine.activePlayer.id } : {}),
     penaltyLabel: room.penaltyLabel,
+    gameSettings: room.gameSettings,
   };
 }
 
@@ -66,6 +65,7 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
 
   function startPyramidTicker(roomCode: string): void {
     stopPyramidInterval(roomCode);
+    const room = roomManager.getRoom(roomCode);
     const interval = setInterval(() => {
       const room = roomManager.getRoom(roomCode);
       if (!room.engine || room.engine.phase !== 'pyramid') {
@@ -86,7 +86,7 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
         io.to(roomCode).emit('busRiderSelected', { riderId, deckRemaining: room.engine.busDeckRemaining });
         broadcastRoom(roomCode);
       }
-    }, PYRAMID_FLIP_INTERVAL_MS);
+    }, room.gameSettings.pyramidFlipIntervalMs);
     pyramidIntervals.set(roomCode, interval);
   }
 
@@ -175,6 +175,22 @@ export function registerSocketHandlers(io: AppServer, roomManager: RoomManager):
       }
       try {
         roomManager.setPenaltyLabel(roomCode, socket.id, label);
+        ack({ ok: true });
+        broadcastRoom(roomCode);
+      } catch (error) {
+        ack(errorAck(error));
+      }
+    });
+
+    socket.on('setGameSettings', ({ settings }, ack) => {
+      ack = safeAck(ack);
+      const roomCode = currentRoomCode(socket);
+      if (!roomCode) {
+        ack({ ok: false, error: 'A socket nincs egy szobához sem csatlakoztatva.' });
+        return;
+      }
+      try {
+        roomManager.setGameSettings(roomCode, socket.id, settings);
         ack({ ok: true });
         broadcastRoom(roomCode);
       } catch (error) {

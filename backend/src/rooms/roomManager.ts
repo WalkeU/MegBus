@@ -1,5 +1,6 @@
 import { GameEngine, MAX_PLAYERS, MIN_PLAYERS } from '../game/gameEngine';
 import { RandomSource } from '../game/deck';
+import { DEFAULT_GAME_SETTINGS, GameSettings, GameSettingsError, validateGameSettings } from '../game/roundTypes';
 import { generateRoomCode } from './roomCode';
 
 export interface RoomPlayer {
@@ -22,6 +23,8 @@ export interface Room {
   engine: GameEngine | null;
   /** A szoba létrehozója szabadon átnevezheti (pl. "Fekvőtámasz") — alapból "Büntetés". */
   penaltyLabel: string;
+  /** A körök típusa/sorrendje/büntetése és a piramis-sorok büntetése — a host testre szabhatja. */
+  gameSettings: GameSettings;
 }
 
 export class RoomManagerError extends Error {
@@ -50,6 +53,7 @@ export class RoomManager {
       phase: 'lobby',
       engine: null,
       penaltyLabel: DEFAULT_PENALTY_LABEL,
+      gameSettings: DEFAULT_GAME_SETTINGS,
     };
     this.rooms.set(code, room);
     return room;
@@ -113,6 +117,27 @@ export class RoomManager {
     return room;
   }
 
+  /** Csak a szoba létrehozója hívhatja, és csak amíg a szoba a váróban van. */
+  setGameSettings(code: string, playerId: string, settings: GameSettings): Room {
+    const room = this.getRoom(code);
+    if (room.hostId !== playerId) {
+      throw new RoomManagerError('Csak a szoba létrehozója módosíthatja a játékbeállításokat.');
+    }
+    if (room.phase !== 'lobby') {
+      throw new RoomManagerError('A játékbeállítások csak a váróteremben módosíthatók.');
+    }
+    try {
+      validateGameSettings(settings);
+    } catch (error) {
+      if (error instanceof GameSettingsError) {
+        throw new RoomManagerError(error.message);
+      }
+      throw error;
+    }
+    room.gameSettings = settings;
+    return room;
+  }
+
   setConnected(code: string, playerId: string, connected: boolean): Room {
     const room = this.getRoom(code);
     const player = room.players.find((p) => p.id === playerId);
@@ -136,6 +161,8 @@ export class RoomManager {
     const engine = new GameEngine(
       room.players.map((p) => ({ id: p.id, name: p.name })),
       this.random,
+      undefined,
+      room.gameSettings,
     );
     engine.start();
     room.engine = engine;

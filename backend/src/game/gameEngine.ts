@@ -1,42 +1,21 @@
-import { Card, Suit, SuitColor } from './types';
+import { Card } from './types';
 import { CardSource, Deck, RandomSource } from './deck';
-import {
-  BetweenOutsideGuess,
-  BiggerSmallerGuess,
-  evaluateBetweenOutside,
-  evaluateBiggerSmaller,
-  evaluateRedBlack,
-  evaluateSuitGuess,
-} from './rounds';
+import { RoundGuess, drawCardForType, evaluateForType } from './roundLogic';
 import { buildPyramid, findMatchingCards, PyramidSlot, PYRAMID_SIZE } from './pyramid';
 import { validateDistribution } from './distribution';
-import { answerBusQuestion, BusAttempt, BusGuess, startBusAttempt } from './busRound';
+import { answerBusQuestion, BusAttempt, startBusAttempt } from './busRound';
+import { DEFAULT_GAME_SETTINGS, GameSettings, RoundDefinition } from './roundTypes';
+
+export type { RoundGuess } from './roundLogic';
 
 export const MIN_PLAYERS = 2;
 /** A pakli (52 lap) 15 lapot tartalék a piramisnak; ennyi játékos fér el úgy,
- * hogy mindenkinek jusson 4 lap (1-4. kör) a piramis kiosztása előtt. */
+ * hogy mindenkinek jusson egy lap az 1-N. kör mindegyikéhez a piramis kiosztása előtt. */
 export const MAX_PLAYERS = Math.floor((52 - PYRAMID_SIZE) / 4);
 
-export type GamePhase =
-  | 'lobby'
-  | 'round1'
-  | 'round2'
-  | 'round3'
-  | 'round4'
-  | 'pyramid'
-  | 'bus'
-  | 'finished';
-
-const GUESS_ROUNDS: readonly GamePhase[] = ['round1', 'round2', 'round3', 'round4'];
-
-/** Rossz tipp esetén a kör sorszámával megegyező korty a büntetés (1/2/3/4). */
-export function roundPenaltyUnits(phase: GamePhase): number {
-  const index = GUESS_ROUNDS.indexOf(phase);
-  if (index === -1) {
-    throw new GameEngineError(`Nincs korty-büntetés a(z) ${phase} fázishoz.`);
-  }
-  return index + 1;
-}
+/** `roundN` — N a szoba `GameSettings.rounds` listájának 1-alapú indexe, tehát a
+ * körök száma (és sorrendje) tetszőleges lehet, nem csak a régi fix 1-4. */
+export type GamePhase = 'lobby' | `round${number}` | 'pyramid' | 'bus' | 'finished';
 
 export interface EnginePlayer {
   readonly id: string;
@@ -51,14 +30,12 @@ export class GameEngineError extends Error {
   }
 }
 
-export type RoundGuess = SuitColor | BiggerSmallerGuess | BetweenOutsideGuess | Suit;
-
 export interface RoundResult {
   readonly playerId: string;
   readonly phase: GamePhase;
   readonly card: Card;
   readonly correct: boolean;
-  /** Rossz tipp esetén ennyi kortyot kell innia (a kör sorszámával egyezik); jó tippnél 0. */
+  /** Rossz tipp esetén a kör konfigurált büntetése; jó tippnél 0. */
   readonly penaltyUnits: number;
   readonly roundAdvanced: boolean;
 }
@@ -79,12 +56,36 @@ export interface BusRiderDecision {
   readonly handSizes: Record<string, number>;
 }
 
+function roundIndexForPhase(phase: GamePhase): number {
+  const match = /^round(\d+)$/.exec(phase);
+  if (!match) {
+    throw new GameEngineError(`Nem kör-fázis: ${phase}`);
+  }
+  return Number(match[1]) - 1;
+}
+
+/** Egy adott fázishoz tartozó kör-definíciót adja vissza a szoba beállításaiból. */
+export function roundDefinitionForPhase(phase: GamePhase, gameSettings: GameSettings): RoundDefinition {
+  const index = roundIndexForPhase(phase);
+  const definition = gameSettings.rounds[index];
+  if (!definition) {
+    throw new GameEngineError(`Nincs kör-definíció a(z) ${phase} fázishoz.`);
+  }
+  return definition;
+}
+
+/** Rossz tipp esetén a kör konfigurált büntetése (a `GameSettings.rounds`-ból). */
+export function roundPenaltyUnits(phase: GamePhase, gameSettings: GameSettings): number {
+  return roundDefinitionForPhase(phase, gameSettings).penaltyUnits;
+}
+
 /**
  * Egy szoba egy lezajló játékmenetét vezérlő, tisztán szerver oldali állapotgép.
  * Nincs hálózati / perzisztencia függősége — ez teszi unit tesztelhetővé.
  */
 export class GameEngine {
   readonly players: EnginePlayer[];
+  readonly gameSettings: GameSettings;
   phase: GamePhase = 'lobby';
   activePlayerIndex = 0;
 
@@ -101,6 +102,7 @@ export class GameEngine {
     players: readonly { id: string; name: string }[],
     random: RandomSource = Math.random,
     deckSource?: CardSource & { remaining: number },
+    gameSettings: GameSettings = DEFAULT_GAME_SETTINGS,
   ) {
     if (players.length < MIN_PLAYERS) {
       throw new GameEngineError(`Legalább ${MIN_PLAYERS} játékos szükséges.`);
@@ -110,6 +112,7 @@ export class GameEngine {
     }
     this.players = players.map((p) => ({ id: p.id, name: p.name, hand: [] }));
     this.deck = deckSource ?? new Deck(random);
+    this.gameSettings = gameSettings;
   }
 
   start(): void {
@@ -132,12 +135,12 @@ export class GameEngine {
     return player;
   }
 
-  /** Az 1-4. kör tippjeit kezeli: lehúz egy lapot az aktív játékosnak, kiértékeli.
+  /** Az 1-N. kör tippjeit kezeli: lehúz egy lapot az aktív játékosnak, kiértékeli.
    * Jó tipp esetén azonnal léptet; rossz tipp esetén a kör csak akkor lép tovább,
    * ha a játékos nyugtázta a büntetést (lásd acknowledgeRoundPenalty). */
   submitGuess(playerId: string, guess: RoundGuess): RoundResult {
-    if (!GUESS_ROUNDS.includes(this.phase)) {
-      throw new GameEngineError(`Tipp csak az 1-4. körben adható, jelenlegi fázis: ${this.phase}`);
+    if (this.phase === 'lobby' || this.phase === 'pyramid' || this.phase === 'bus' || this.phase === 'finished') {
+      throw new GameEngineError(`Tipp csak kör-fázisban adható, jelenlegi fázis: ${this.phase}`);
     }
     if (this.pendingPenaltyPlayerId) {
       throw new GameEngineError('Előbb nyugtázni kell az előző büntetést, mielőtt új tipp adható.');
@@ -148,11 +151,12 @@ export class GameEngine {
 
     const player = this.getPlayer(playerId);
     const phase = this.phase;
-    const card = this.drawCardForRound(phase, player);
-    const correct = this.evaluateGuess(phase, player, card, guess);
+    const roundDef = roundDefinitionForPhase(phase, this.gameSettings);
+    const card = drawCardForType(this.deck, roundDef.type, player.hand);
+    const correct = evaluateForType(roundDef.type, player.hand, card, guess);
     player.hand.push(card);
 
-    const penaltyUnits = correct ? 0 : roundPenaltyUnits(phase);
+    const penaltyUnits = correct ? 0 : roundDef.penaltyUnits;
     let roundAdvanced = false;
     if (correct) {
       roundAdvanced = this.advanceTurn();
@@ -173,46 +177,6 @@ export class GameEngine {
     return { roundAdvanced };
   }
 
-  private drawCardForRound(phase: GamePhase, player: EnginePlayer): Card {
-    if (phase === 'round2') {
-      const first = player.hand[0];
-      if (!first) throw new GameEngineError('Hiányzik az 1. körös lap.');
-      return this.deck.drawExcludingRanks(new Set([first.rank]));
-    }
-    if (phase === 'round3') {
-      const first = player.hand[0];
-      const second = player.hand[1];
-      if (!first || !second) throw new GameEngineError('Hiányzik az 1-2. körös lap.');
-      return this.deck.drawExcludingRanks(new Set([first.rank, second.rank]));
-    }
-    return this.deck.draw();
-  }
-
-  private evaluateGuess(
-    phase: GamePhase,
-    player: EnginePlayer,
-    card: Card,
-    guess: RoundGuess,
-  ): boolean {
-    switch (phase) {
-      case 'round1':
-        return evaluateRedBlack(card, guess as SuitColor);
-      case 'round2':
-        return evaluateBiggerSmaller(player.hand[0] as Card, card, guess as BiggerSmallerGuess);
-      case 'round3':
-        return evaluateBetweenOutside(
-          player.hand[0] as Card,
-          player.hand[1] as Card,
-          card,
-          guess as BetweenOutsideGuess,
-        );
-      case 'round4':
-        return evaluateSuitGuess(card, guess as Suit);
-      default:
-        throw new GameEngineError(`Érvénytelen kör: ${phase}`);
-    }
-  }
-
   /** Visszaadja, hogy a kör (és ezzel a fázis) váltott-e, miután mindenki tippelt. */
   private advanceTurn(): boolean {
     if (this.activePlayerIndex < this.players.length - 1) {
@@ -220,10 +184,12 @@ export class GameEngine {
       return false;
     }
     this.activePlayerIndex = 0;
-    const currentRoundIndex = GUESS_ROUNDS.indexOf(this.phase);
-    const nextPhase = GUESS_ROUNDS[currentRoundIndex + 1];
-    this.phase = nextPhase ?? 'pyramid';
-    if (this.phase === 'pyramid') {
+    const currentRoundIndex = roundIndexForPhase(this.phase);
+    const nextRoundIndex = currentRoundIndex + 1;
+    if (nextRoundIndex < this.gameSettings.rounds.length) {
+      this.phase = `round${nextRoundIndex + 1}`;
+    } else {
+      this.phase = 'pyramid';
       this.pyramidSlots = buildPyramid(this.deck);
       this.pyramidRevealIndex = -1;
     }
@@ -247,9 +213,9 @@ export class GameEngine {
 
   /**
    * Egy játékos lerakja az egyező értékű lapját a kezéből, és kiosztja a sor büntetését.
-   * A `distribution` a kliens saját döntése (kinek hány kortyot ad) — nem kötelező
-   * egyenlő elosztás —, csak azt ellenőrizzük, hogy pontosan a sor értékét osztja ki,
-   * valós, más játékosoknak, fejenként legalább 1 egész kortyot.
+   * A `distribution` a kliens saját döntése (kinek hány büntetés-egységet ad) — nem
+   * kötelező egyenlő elosztás —, csak azt ellenőrizzük, hogy pontosan a sor
+   * (host által beállított) büntetés-mennyiségét osztja ki.
    */
   playPyramidMatch(
     playerId: string,
@@ -275,8 +241,11 @@ export class GameEngine {
       }
       this.getPlayer(recipientId);
     }
+    // rowValue mindig 1-5, a pyramidRowPenalties pedig `validateGameSettings` által
+    // garantáltan pontosan 5 elemű — TS csak nem tudja ezt statikusan levezetni indexelésnél.
+    const rowPenalty = this.gameSettings.pyramidRowPenalties[currentSlot.rowValue - 1] as number;
     try {
-      validateDistribution(currentSlot.rowValue, distribution);
+      validateDistribution(rowPenalty, distribution);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Érvénytelen kiosztás.';
       throw new GameEngineError(message);
@@ -336,7 +305,8 @@ export class GameEngine {
     return this.busDeck?.remaining ?? 0;
   }
 
-  answerBus(playerId: string, guess: BusGuess) {
+  /** A buszozás mindig ugyanazt a kör-típus-sorrendet futja végig, mint az 1-N. kör. */
+  answerBus(playerId: string, guess: RoundGuess) {
     if (this.phase !== 'bus') {
       throw new GameEngineError('Buszozás csak a bus fázisban zajlik.');
     }
@@ -346,7 +316,8 @@ export class GameEngine {
     if (!this.busDeck) {
       throw new GameEngineError('Nincs inicializálva a buszozás paklija.');
     }
-    const result = answerBusQuestion(this.busDeck, this.busAttempt, guess);
+    const roundTypes = this.gameSettings.rounds.map((r) => r.type);
+    const result = answerBusQuestion(this.busDeck, this.busAttempt, guess, roundTypes);
     this.busAttempt = result.nextAttempt;
     if (result.exitedBus) {
       this.phase = 'finished';

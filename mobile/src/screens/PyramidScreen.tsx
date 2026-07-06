@@ -7,7 +7,7 @@ import { PyramidCountdownRing } from '../components/PyramidCountdownRing';
 import { Surface } from '../components/Surface';
 import { colors, spacing, typography } from '../theme/theme';
 import { cardKey, type Card } from '../types/game';
-import { useGameStore, selectPenaltyLabel } from '../store/gameStore';
+import { useGameStore, selectGameSettings, selectPenaltyLabel } from '../store/gameStore';
 
 // Alulról felfelé fordul: a legalsó sor (5 lap) 1 korty, a csúcs (1 lap) 5 korty —
 // pontosan a MegBus/Views/PyramidView.swift `pyramidRowSizes`/`revealIndexRange` mása.
@@ -25,6 +25,7 @@ export function PyramidScreen() {
   const pyramidFlips = useGameStore((s) => s.pyramidFlips);
   const pendingPyramidDrinkUnits = useGameStore((s) => s.pendingPyramidDrinkUnits);
   const penaltyLabel = useGameStore(selectPenaltyLabel);
+  const gameSettings = useGameStore(selectGameSettings);
   const myHand = useGameStore((s) => s.myHand);
   const roomState = useGameStore((s) => s.roomState);
   const myPlayerId = useGameStore((s) => s.myPlayerId);
@@ -112,7 +113,11 @@ export function PyramidScreen() {
 
       {!isPyramidFinished ? (
         <View style={styles.countdownRow}>
-          <PyramidCountdownRing flipCount={pyramidFlips.length} paused={isCountdownPaused} />
+          <PyramidCountdownRing
+            flipCount={pyramidFlips.length}
+            paused={isCountdownPaused}
+            intervalMs={gameSettings.pyramidFlipIntervalMs}
+          />
         </View>
       ) : null}
 

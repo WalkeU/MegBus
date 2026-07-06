@@ -1,5 +1,6 @@
 import { GameEngine, GameEngineError, MAX_PLAYERS, MIN_PLAYERS, roundPenaltyUnits } from '../game/gameEngine';
 import { PYRAMID_SIZE } from '../game/pyramid';
+import { DEFAULT_GAME_SETTINGS, GameSettings } from '../game/roundTypes';
 import { FixedCardSource, card } from './testUtils';
 
 describe('GameEngine — konstruktor validáció', () => {
@@ -197,15 +198,15 @@ describe('GameEngine — piramis', () => {
 });
 
 describe('roundPenaltyUnits', () => {
-  it('a kör sorszámával egyező büntetést ad vissza (1-4. kör)', () => {
-    expect(roundPenaltyUnits('round1')).toBe(1);
-    expect(roundPenaltyUnits('round2')).toBe(2);
-    expect(roundPenaltyUnits('round3')).toBe(3);
-    expect(roundPenaltyUnits('round4')).toBe(4);
+  it('a kör sorszámával egyező büntetést ad vissza (alapértelmezett 1-4. kör)', () => {
+    expect(roundPenaltyUnits('round1', DEFAULT_GAME_SETTINGS)).toBe(1);
+    expect(roundPenaltyUnits('round2', DEFAULT_GAME_SETTINGS)).toBe(2);
+    expect(roundPenaltyUnits('round3', DEFAULT_GAME_SETTINGS)).toBe(3);
+    expect(roundPenaltyUnits('round4', DEFAULT_GAME_SETTINGS)).toBe(4);
   });
 
   it('nem tippelős fázisra hibát dob', () => {
-    expect(() => roundPenaltyUnits('pyramid')).toThrow(GameEngineError);
+    expect(() => roundPenaltyUnits('pyramid', DEFAULT_GAME_SETTINGS)).toThrow(GameEngineError);
   });
 });
 
@@ -351,6 +352,80 @@ describe('GameEngine — buszozó kiválasztása és négykérdéses buszozás',
     const q4 = engine.answerBus('B', 'hearts');
     expect(q4.correct).toBe(true);
     expect(q4.exitedBus).toBe(true);
+    expect(engine.phase).toBe('finished');
+  });
+});
+
+describe('GameEngine — testre szabott GameSettings', () => {
+  it('egyedi (2 körös) kör-lista, egyedi piramis-büntetés, és a buszozás ugyanazt a 2 kört futja', () => {
+    const customSettings: GameSettings = {
+      rounds: [
+        { type: 'redBlack', penaltyUnits: 1 },
+        { type: 'exactRank', penaltyUnits: 5 },
+      ],
+      pyramidRowPenalties: [2, 2, 2, 2, 2],
+      pyramidFlipIntervalMs: 5000,
+    };
+    const queue = [
+      card(5, 'hearts'), // A r1 — piros, helyes
+      card(6, 'clubs'), // B r1 — fekete, helyes
+      card(9, 'clubs'), // A r2 — pontos érték: 9, helyes
+      card(2, 'hearts'), // B r2 — pontos érték: 2, helyes
+      card(9, 'diamonds'), // piramis slot0 (rowValue 1) — egyezik A r2 (9-es) lapjával
+      ...Array.from({ length: 14 }, () => card(13, 'clubs')), // piramis töltőlapok
+    ];
+    const deck = new FixedCardSource(queue);
+    const engine = new GameEngine(
+      [{ id: 'A', name: 'Anna' }, { id: 'B', name: 'Béla' }],
+      Math.random,
+      deck,
+      customSettings,
+    );
+    engine.start();
+    expect(engine.phase).toBe('round1');
+
+    engine.submitGuess('A', 'red');
+    engine.submitGuess('B', 'black');
+    expect(engine.phase).toBe('round2');
+
+    engine.submitGuess('A', 9);
+    const last = engine.submitGuess('B', 2);
+    expect(last.correct).toBe(true);
+    // Csak 2 kör van konfigurálva — a 3. körhöz nem lehetne (és nem is kell) tovább lépni.
+    expect(engine.phase).toBe('pyramid');
+
+    engine.flipNextPyramidCard(); // revealIndex 0, rowValue 1, card = 9 diamonds
+
+    // Az alapértelmezett piramis-büntetés 1 lenne — itt 2-nek kell lennie a testre
+    // szabott pyramidRowPenalties[0] miatt.
+    expect(() => engine.playPyramidMatch('A', { suit: 'clubs', rank: 9 }, { B: 1 })).toThrow(GameEngineError);
+    const pyramidResult = engine.playPyramidMatch('A', { suit: 'clubs', rank: 9 }, { B: 2 });
+    expect(pyramidResult.distribution).toEqual({ B: 2 });
+
+    for (let i = 1; i < PYRAMID_SIZE; i++) engine.flipNextPyramidCard();
+
+    const decision = engine.determineBusRider();
+    // A leadta a 9-es lapját a piramisban (1 lapja marad), B-nek 2 lapja van — B buszozik.
+    expect(decision.riderId).toBe('B');
+    expect(decision.handSizes).toEqual({ A: 1, B: 2 });
+
+    const busDeck = new FixedCardSource([
+      card(3, 'hearts'), // 1. kérdés (redBlack): piros, helyes
+      card(7, 'spades'), // 2. kérdés (exactRank): pontosan 7, helyes
+    ]);
+    engine.startBusRound(Math.random, busDeck);
+
+    const busQ1 = engine.answerBus('B', 'red');
+    expect(busQ1.correct).toBe(true);
+    expect(busQ1.question).toBe('redBlack');
+    expect(busQ1.exitedBus).toBe(false);
+
+    // A régi, fix négykérdéses buszozásnál itt még 2 kérdés hátra lenne — a testre
+    // szabott 2 körös listánál viszont ez már az utolsó kérdés, azonnal kiszáll.
+    const busQ2 = engine.answerBus('B', 7);
+    expect(busQ2.correct).toBe(true);
+    expect(busQ2.question).toBe('exactRank');
+    expect(busQ2.exitedBus).toBe(true);
     expect(engine.phase).toBe('finished');
   });
 });

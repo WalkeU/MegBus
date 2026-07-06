@@ -1,21 +1,23 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button } from '../components/Button';
 import { CardView } from '../components/CardView';
+import { GuessButtons } from '../components/GuessButtons';
 import { Surface } from '../components/Surface';
 import { colors, spacing, typography } from '../theme/theme';
-import { roundTitleForPhase } from '../utils/busQuestions';
-import { suitDisplayNames, suitSymbols } from '../utils/cardLabels';
-import { useGameStore, selectActivePlayerName, selectIsMyTurn, selectPenaltyLabel } from '../store/gameStore';
-import { SUITS, type GamePhase, type RoundGuess } from '../types/game';
+import { roundTypeTitles } from '../utils/roundTypeDisplay';
+import {
+  useGameStore,
+  selectActivePlayerName,
+  selectCurrentRoundType,
+  selectIsMyTurn,
+  selectPenaltyLabel,
+} from '../store/gameStore';
+import type { RoundGuess } from '../types/game';
 
 const DUMMY_FACE_DOWN_CARD = { suit: 'spades', rank: 2 } as const;
 
 export function RoundScreen() {
-  const phase = useGameStore((s) => (s.roomState?.phase ?? 'round1') as GamePhase) as
-    | 'round1'
-    | 'round2'
-    | 'round3'
-    | 'round4';
+  const roundType = useGameStore(selectCurrentRoundType);
   const isMyTurn = useGameStore(selectIsMyTurn);
   const activePlayerName = useGameStore(selectActivePlayerName);
   const lastDrawnCard = useGameStore((s) => s.lastDrawnCard);
@@ -27,6 +29,8 @@ export function RoundScreen() {
   const submitGuess = useGameStore((s) => s.submitGuess);
   const acknowledgePenalty = useGameStore((s) => s.acknowledgePenalty);
 
+  if (!roundType) return null;
+
   const guess = (value: RoundGuess) => {
     if (isBusy) return;
     void submitGuess(value);
@@ -34,7 +38,7 @@ export function RoundScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{roundTitleForPhase(phase)}</Text>
+      <Text style={styles.title}>{roundTypeTitles[roundType]}</Text>
 
       <Text style={isMyTurn ? styles.turnActive : styles.turnOther}>
         {isMyTurn ? 'Te jössz' : `${activePlayerName ?? '…'} tippel…`}
@@ -65,7 +69,7 @@ export function RoundScreen() {
           <Button title="Megvolt" onPress={() => void acknowledgePenalty()} disabled={isBusy} />
         </Surface>
       ) : isMyTurn ? (
-        <GuessButtons phase={phase} onGuess={guess} disabled={isBusy} />
+        <GuessButtons type={roundType} onGuess={guess} disabled={isBusy} />
       ) : null}
 
       <View style={styles.handSection}>
@@ -76,66 +80,6 @@ export function RoundScreen() {
           ))}
         </ScrollView>
       </View>
-    </View>
-  );
-}
-
-function GuessButtons({
-  phase,
-  onGuess,
-  disabled,
-}: {
-  phase: 'round1' | 'round2' | 'round3' | 'round4';
-  onGuess: (guess: RoundGuess) => void;
-  disabled: boolean;
-}) {
-  if (phase === 'round1') {
-    return (
-      <View style={styles.buttonRow}>
-        <View style={styles.buttonHalf}>
-          <Button title="Piros" onPress={() => onGuess('red')} disabled={disabled} />
-        </View>
-        <View style={styles.buttonHalf}>
-          <Button title="Fekete" onPress={() => onGuess('black')} disabled={disabled} />
-        </View>
-      </View>
-    );
-  }
-  if (phase === 'round2') {
-    return (
-      <View style={styles.buttonRow}>
-        <View style={styles.buttonHalf}>
-          <Button title="Kisebb" onPress={() => onGuess('smaller')} disabled={disabled} />
-        </View>
-        <View style={styles.buttonHalf}>
-          <Button title="Nagyobb" onPress={() => onGuess('bigger')} disabled={disabled} />
-        </View>
-      </View>
-    );
-  }
-  if (phase === 'round3') {
-    return (
-      <View style={styles.buttonRow}>
-        <View style={styles.buttonHalf}>
-          <Button title="Kívül" onPress={() => onGuess('outside')} disabled={disabled} />
-        </View>
-        <View style={styles.buttonHalf}>
-          <Button title="Közte" onPress={() => onGuess('between')} disabled={disabled} />
-        </View>
-      </View>
-    );
-  }
-  return (
-    <View style={styles.suitColumn}>
-      {SUITS.map((suit) => (
-        <Button
-          key={suit}
-          title={`${suitSymbols[suit]} ${suitDisplayNames[suit]}`}
-          onPress={() => onGuess(suit)}
-          prominent={false}
-          disabled={disabled}
-        />
-      ))}
     </View>
   );
 }
@@ -182,16 +126,6 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 20,
     fontWeight: '700',
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  buttonHalf: {
-    flex: 1,
-  },
-  suitColumn: {
-    gap: 10,
   },
   handSection: {
     gap: 8,

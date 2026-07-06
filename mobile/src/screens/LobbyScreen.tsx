@@ -5,6 +5,7 @@ import { PlayerBadge } from '../components/PlayerBadge';
 import { Surface } from '../components/Surface';
 import { colors, radii, spacing, typography } from '../theme/theme';
 import { useGameStore, selectIsHost, selectPenaltyLabel } from '../store/gameStore';
+import { GameSettingsScreen } from './GameSettingsScreen';
 
 export function LobbyScreen() {
   const roomState = useGameStore((s) => s.roomState);
@@ -15,6 +16,7 @@ export function LobbyScreen() {
   const isBusy = useGameStore((s) => s.isBusy);
   const isHost = useGameStore(selectIsHost);
   const penaltyLabel = useGameStore(selectPenaltyLabel);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const myself = roomState?.players.find((p) => p.id === myPlayerId);
   const isReady = myself?.ready ?? false;
@@ -64,6 +66,10 @@ export function LobbyScreen() {
         )}
       </Surface>
 
+      {isHost ? (
+        <Button title="Játékbeállítások" onPress={() => setSettingsOpen(true)} prominent={false} />
+      ) : null}
+
       <View style={styles.flexSpacer} />
 
       <Button
@@ -79,6 +85,8 @@ export function LobbyScreen() {
         destructive
         disabled={isBusy}
       />
+
+      <GameSettingsScreen visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </View>
   );
 }

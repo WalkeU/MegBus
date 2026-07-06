@@ -8,21 +8,13 @@ struct RoundView: View {
         return viewModel.roomState?.players.first(where: { $0.id == activeId })?.name ?? ""
     }
 
-    private var roundTitle: String {
-        switch viewModel.roomState?.phase {
-        case .round1: return "Piros vagy fekete?"
-        case .round2: return "Nagyobb vagy kisebb?"
-        case .round3: return "Közte vagy kívül?"
-        case .round4: return "Milyen szín?"
-        default: return ""
-        }
-    }
-
     var body: some View {
         VStack(spacing: AppTheme.spacing) {
-            Text(roundTitle)
-                .font(.title2.bold())
-                .padding(.top, 24)
+            if let roundType = viewModel.currentRoundType {
+                Text(roundType.title)
+                    .font(.title2.bold())
+                    .padding(.top, 24)
+            }
 
             if viewModel.isMyTurn {
                 Text("Te jössz")
@@ -53,53 +45,16 @@ struct RoundView: View {
 
             if let penaltyUnits = viewModel.pendingPenaltyUnits {
                 penaltyPanel(units: penaltyUnits)
-            } else if viewModel.isMyTurn {
-                guessButtons
+            } else if viewModel.isMyTurn, let roundType = viewModel.currentRoundType {
+                GuessButtonsView(type: roundType, isBusy: viewModel.isBusy) { guess in
+                    Task { await viewModel.submitGuess(guess) }
+                }
             }
 
             myHandView
         }
         .padding(24)
         .appBackground()
-    }
-
-    @ViewBuilder
-    private var guessButtons: some View {
-        switch viewModel.roomState?.phase {
-        case .round1:
-            guessRow(options: [("Piros", "red"), ("Fekete", "black")])
-        case .round2:
-            guessRow(options: [("Kisebb", "smaller"), ("Nagyobb", "bigger")])
-        case .round3:
-            guessRow(options: [("Kívül", "outside"), ("Közte", "between")])
-        case .round4:
-            VStack(spacing: 10) {
-                ForEach(Suit.allCases) { suit in
-                    Button {
-                        Task { await viewModel.submitGuess(suit.rawValue) }
-                    } label: {
-                        Text("\(suit.symbol) \(suit.displayName)")
-                    }
-                    .buttonStyle(PrimaryButtonStyle(isProminent: false))
-                }
-            }
-        default:
-            EmptyView()
-        }
-    }
-
-    private func guessRow(options: [(String, String)]) -> some View {
-        HStack(spacing: 12) {
-            ForEach(options, id: \.1) { label, value in
-                Button {
-                    Task { await viewModel.submitGuess(value) }
-                } label: {
-                    Text(label)
-                }
-                .buttonStyle(PrimaryButtonStyle())
-            }
-        }
-        .disabled(viewModel.isBusy)
     }
 
     private func penaltyPanel(units: Int) -> some View {

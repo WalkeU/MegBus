@@ -7,11 +7,12 @@ import SwiftUI
 struct PyramidCountdownRing: View {
     let flipCount: Int
     let isPaused: Bool
+    var intervalMs: Int = 5000
 
     @State private var progress: CGFloat = 0
     @State private var tickTask: Task<Void, Never>?
 
-    private let interval: TimeInterval = 5
+    private var interval: TimeInterval { TimeInterval(intervalMs) / 1000 }
     private let tickInterval: TimeInterval = 0.05
 
     var body: some View {

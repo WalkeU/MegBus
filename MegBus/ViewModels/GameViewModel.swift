@@ -10,7 +10,7 @@ struct PyramidFlipDisplay: Identifiable {
 }
 
 struct BusResultDisplay {
-    let question: BusQuestion
+    let question: RoundType
     let card: Card
     let correct: Bool
 }
@@ -52,12 +52,19 @@ final class GameViewModel: ObservableObject {
     var isMyTurn: Bool { roomState?.activePlayerId == myPlayerId }
     var isBusRider: Bool { busRiderId == myPlayerId }
     var penaltyLabel: String { roomState?.penaltyLabel ?? defaultPenaltyLabel }
+    var gameSettings: GameSettings { roomState?.gameSettings ?? defaultGameSettings }
 
-    /// A buszozó következő megválaszolandó kérdése: hibás tipp után mindig az elejéről indul.
-    var currentBusQuestion: BusQuestion {
-        guard let last = busLastResult else { return .redBlack }
-        guard last.correct else { return .redBlack }
-        return BusQuestion.next(after: last.question) ?? .redBlack
+    /// Az aktuális kör TÍPUSA a `phase` (`.round(n)`) alapján.
+    var currentRoundType: RoundType? {
+        guard case .round(let n) = roomState?.phase else { return nil }
+        return gameSettings.rounds[safe: n - 1]?.type
+    }
+
+    /// A buszozó eddig hibátlanul megválaszolt kérdéseinek száma adja az aktuális
+    /// kör-lista-indexet — hibás válasz esetén ez 0-ra esik vissza (lásd busAttemptCards).
+    var currentBusQuestion: RoundType {
+        let rounds = gameSettings.rounds
+        return rounds[safe: busAttemptCards.count]?.type ?? rounds.first?.type ?? .redBlack
     }
 
     init(connection: GameConnection) {
@@ -151,9 +158,13 @@ final class GameViewModel: ObservableObject {
         await run { try await connection.setPenaltyLabel(label) }
     }
 
-    // MARK: - 1-4. kör
+    func setGameSettings(_ settings: GameSettings) async {
+        await run { try await connection.setGameSettings(settings) }
+    }
 
-    func submitGuess(_ guess: String) async {
+    // MARK: - 1-N. kör
+
+    func submitGuess(_ guess: RoundGuessValue) async {
         await run { try await connection.submitGuess(guess) }
     }
 
@@ -203,7 +214,7 @@ final class GameViewModel: ObservableObject {
 
     // MARK: - Buszozás
 
-    func answerBus(_ guess: String) async {
+    func answerBus(_ guess: RoundGuessValue) async {
         await run { try await connection.answerBus(guess) }
     }
 
@@ -293,7 +304,7 @@ final class GameViewModel: ObservableObject {
     private func updateScreen(for phase: GamePhase) {
         switch phase {
         case .lobby: screen = .lobby
-        case .round1, .round2, .round3, .round4: screen = .round
+        case .round: screen = .round
         case .pyramid: screen = .pyramid
         case .bus: screen = .bus
         case .finished: screen = .gameOver

@@ -5,6 +5,7 @@ import type {
   BusGuess,
   Card,
   CreateRoomResponse,
+  GameSettings,
   JoinRoomResponse,
   RoomBroadcastState,
   RoundGuess,
@@ -120,6 +121,9 @@ export const rpc = {
   },
   async setPenaltyLabel(label: string): Promise<void> {
     await emitWithAck('setPenaltyLabel', { label });
+  },
+  async setGameSettings(settings: GameSettings): Promise<void> {
+    await emitWithAck('setGameSettings', { settings });
   },
   async submitGuess(guess: RoundGuess): Promise<void> {
     await emitWithAck('submitGuess', { guess });

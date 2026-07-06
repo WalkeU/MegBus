@@ -14,6 +14,7 @@ final class MockGameConnection: GameConnection {
         RoomPlayer(id: "p2", name: "Anna", ready: false, connected: true),
     ]
     private var penaltyLabel = defaultPenaltyLabel
+    private var gameSettings = defaultGameSettings
 
     func connect() async throws {}
 
@@ -32,6 +33,11 @@ final class MockGameConnection: GameConnection {
         emitRoomUpdated(phase: .lobby)
     }
 
+    func setGameSettings(_ settings: GameSettings) async throws {
+        gameSettings = settings
+        emitRoomUpdated(phase: .lobby)
+    }
+
     func setReady(_ ready: Bool) async throws {
         if let index = players.firstIndex(where: { $0.id == myPlayerId }) {
             players[index].ready = ready
@@ -39,12 +45,12 @@ final class MockGameConnection: GameConnection {
         emitRoomUpdated(phase: .lobby)
 
         if players.allSatisfy(\.ready) {
-            emitRoomUpdated(phase: .round1)
-            onEvent?(.activePlayerChanged(playerId: myPlayerId, phase: .round1))
+            emitRoomUpdated(phase: .round(1))
+            onEvent?(.activePlayerChanged(playerId: myPlayerId, phase: .round(1)))
         }
     }
 
-    func submitGuess(_ guess: String) async throws {
+    func submitGuess(_ guess: RoundGuessValue) async throws {
         onEvent?(.guessResolved(playerId: myPlayerId, card: Card(suit: .hearts, rank: 9), correct: true, penaltyUnits: 0))
     }
 
@@ -60,7 +66,7 @@ final class MockGameConnection: GameConnection {
 
     func acknowledgePyramidDrink() async throws {}
 
-    func answerBus(_ guess: String) async throws {
+    func answerBus(_ guess: RoundGuessValue) async throws {
         onEvent?(.busQuestionResolved(
             riderId: myPlayerId, question: .redBlack, card: Card(suit: .spades, rank: 4),
             correct: true, exitedBus: false, deckRemaining: 47
@@ -75,7 +81,8 @@ final class MockGameConnection: GameConnection {
 
     private func emitRoomUpdated(phase: GamePhase) {
         let state = RoomState(
-            code: roomCode, phase: phase, players: players, activePlayerId: myPlayerId, penaltyLabel: penaltyLabel
+            code: roomCode, phase: phase, players: players, activePlayerId: myPlayerId,
+            penaltyLabel: penaltyLabel, gameSettings: gameSettings
         )
         onEvent?(.roomUpdated(state))
     }

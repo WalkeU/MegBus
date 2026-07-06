@@ -74,8 +74,18 @@ final class SocketIOGameConnection: GameConnection {
         _ = try await emitWithAck("setPenaltyLabel", ["label": label])
     }
 
-    func submitGuess(_ guess: String) async throws {
-        _ = try await emitWithAck("submitGuess", ["guess": guess])
+    func setGameSettings(_ settings: GameSettings) async throws {
+        let roundsPayload = settings.rounds.map { ["type": $0.type.rawValue, "penaltyUnits": $0.penaltyUnits] as [String: Any] }
+        let settingsPayload: [String: Any] = [
+            "rounds": roundsPayload,
+            "pyramidRowPenalties": settings.pyramidRowPenalties,
+            "pyramidFlipIntervalMs": settings.pyramidFlipIntervalMs,
+        ]
+        _ = try await emitWithAck("setGameSettings", ["settings": settingsPayload])
+    }
+
+    func submitGuess(_ guess: RoundGuessValue) async throws {
+        _ = try await emitWithAck("submitGuess", ["guess": guess.wireValue])
     }
 
     func acknowledgePenalty() async throws {
@@ -102,8 +112,8 @@ final class SocketIOGameConnection: GameConnection {
         _ = try await emitWithAck("acknowledgePyramidDrink")
     }
 
-    func answerBus(_ guess: String) async throws {
-        _ = try await emitWithAck("answerBus", ["guess": guess])
+    func answerBus(_ guess: RoundGuessValue) async throws {
+        _ = try await emitWithAck("answerBus", ["guess": guess.wireValue])
     }
 
     func requestNewRound() async throws {
@@ -203,7 +213,7 @@ final class SocketIOGameConnection: GameConnection {
         socket.on("busQuestionResolved") { [weak self] data, _ in
             guard let self, let payload = data.first as? [String: Any],
                   let riderId = payload["riderId"] as? String,
-                  let questionRaw = payload["question"] as? String, let question = BusQuestion(rawValue: questionRaw),
+                  let questionRaw = payload["question"] as? String, let question = RoundType(rawValue: questionRaw),
                   let cardPayload = payload["card"] as? [String: Any], let card = Self.decodeCard(cardPayload),
                   let correct = payload["correct"] as? Bool,
                   let exitedBus = payload["exitedBus"] as? Bool,
@@ -245,7 +255,26 @@ final class SocketIOGameConnection: GameConnection {
         }
         let activePlayerId = payload["activePlayerId"] as? String
         let penaltyLabel = payload["penaltyLabel"] as? String ?? defaultPenaltyLabel
-        return RoomState(code: code, phase: phase, players: players, activePlayerId: activePlayerId, penaltyLabel: penaltyLabel)
+        let gameSettings = (payload["gameSettings"] as? [String: Any]).flatMap(decodeGameSettings) ?? defaultGameSettings
+        return RoomState(
+            code: code, phase: phase, players: players, activePlayerId: activePlayerId,
+            penaltyLabel: penaltyLabel, gameSettings: gameSettings
+        )
+    }
+
+    private static func decodeGameSettings(_ payload: [String: Any]) -> GameSettings? {
+        guard let roundDicts = payload["rounds"] as? [[String: Any]],
+              let pyramidRowPenalties = payload["pyramidRowPenalties"] as? [Int],
+              let pyramidFlipIntervalMs = payload["pyramidFlipIntervalMs"] as? Int
+        else { return nil }
+        let rounds: [RoundDefinition] = roundDicts.compactMap { dict in
+            guard let typeRaw = dict["type"] as? String, let type = RoundType(rawValue: typeRaw),
+                  let penaltyUnits = dict["penaltyUnits"] as? Int
+            else { return nil }
+            return RoundDefinition(type: type, penaltyUnits: penaltyUnits)
+        }
+        guard rounds.count == roundDicts.count else { return nil }
+        return GameSettings(rounds: rounds, pyramidRowPenalties: pyramidRowPenalties, pyramidFlipIntervalMs: pyramidFlipIntervalMs)
     }
 }
 #endif
